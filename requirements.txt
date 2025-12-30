@@ -1,0 +1,29 @@
+# Core dependencies
+discord.py>=2.3.0
+psycopg[binary]>=3.1.0
+sqlalchemy>=2.0.0
+alembic>=1.12.0
+redis>=5.0.0
+
+# ML/NLP
+detoxify>=0.5.0
+transformers>=4.35.0
+torch>=2.1.0
+sentence-transformers>=2.2.0
+
+# Data processing
+numpy>=1.24.0
+pandas>=2.0.0
+
+# Configuration
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+python-dotenv>=1.0.0
+
+# Logging & monitoring
+structlog>=23.0.0
+prometheus-client>=0.19.0
+
+# Utilities
+aiohttp>=3.9.0
+tenacity>=8.2.0
