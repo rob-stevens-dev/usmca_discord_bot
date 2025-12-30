@@ -12,20 +12,8 @@ from pydantic import BaseModel, Field, field_validator
 
 
 class ToxicityScores(BaseModel):
-    """Toxicity classification scores from ML model.
-
-    All scores are in the range [0.0, 1.0] where higher values indicate
-    greater likelihood of the respective category.
-
-    Attributes:
-        toxicity: Overall toxicity score.
-        severe_toxicity: Severe toxic content score.
-        obscene: Obscene language score.
-        threat: Threatening content score.
-        insult: Insulting content score.
-        identity_attack: Identity-based attack score.
-    """
-
+    """Toxicity classification scores."""
+    
     toxicity: float = Field(ge=0.0, le=1.0)
     severe_toxicity: float = Field(ge=0.0, le=1.0)
     obscene: float = Field(ge=0.0, le=1.0)
@@ -36,7 +24,7 @@ class ToxicityScores(BaseModel):
     @property
     def max_score(self) -> float:
         """Get the maximum score across all categories.
-
+        
         Returns:
             The highest toxicity score.
         """
@@ -51,12 +39,19 @@ class ToxicityScores(BaseModel):
 
     def is_toxic(self, threshold: float = 0.5) -> bool:
         """Check if any score exceeds the toxicity threshold.
-
+        
         Args:
             threshold: Toxicity threshold (default: 0.5).
-
+        
         Returns:
             True if any score exceeds threshold.
+        
+        Example:
+            >>> scores = ToxicityScores(toxicity=0.8, ...)
+            >>> scores.is_toxic()  # Uses default 0.5
+            True
+            >>> scores.is_toxic(0.9)  # Custom threshold
+            False
         """
         return self.max_score >= threshold
 
@@ -115,15 +110,21 @@ class User(BaseModel):
 
     def is_new_account(self, days: int = 7) -> bool:
         """Check if account is considered new.
-
+        
         Args:
             days: Number of days to consider "new" (default: 7).
-
+        
         Returns:
             True if account joined within the specified days.
+        
+        Example:
+            >>> user = User(joined_at=datetime.now() - timedelta(days=3), ...)
+            >>> user.is_new_account()  # Uses default 7 days
+            True
+            >>> user.is_new_account(30)  # Custom threshold
+            True
         """
         from datetime import timezone
-
         age = datetime.now(timezone.utc) - self.joined_at
         return age.days < days
 
