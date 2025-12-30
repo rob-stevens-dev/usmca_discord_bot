@@ -136,6 +136,19 @@ class USMCABot(discord.Client):
         if message.guild.id != self.settings.discord_guild_id:
             return
 
+        # Only process messages in configured guild
+        if message.guild.id != self.settings.discord_guild_id:
+            return
+        
+        # Check if channel should be monitored
+        if not self.settings.should_monitor_channel(message.channel.id):
+            self._logger.debug(
+                "channel_skipped",
+                channel_id=message.channel.id,
+                channel_name=getattr(message.channel, 'name', 'unknown'),
+            )
+            return
+
         # Track processing
         self._processing_messages += 1
 

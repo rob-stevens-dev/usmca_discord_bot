@@ -306,3 +306,77 @@ class TestThresholdValidation:
         else:
             with pytest.raises(ValidationError):
                 Settings()
+                
+class TestChannelFiltering:
+    """Test suite for channel filtering configuration."""
+
+    def test_no_filtering_default(self, test_settings: Settings) -> None:
+        """Test default behavior monitors all channels."""
+        assert test_settings.should_monitor_channel(123) is True
+        assert test_settings.should_monitor_channel(456) is True
+        assert test_settings.should_monitor_channel(789) is True
+
+    def test_allowlist_filters_correctly(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test allowlist only monitors specified channels."""
+        monkeypatch.setenv("DISCORD_TOKEN", "x" * 59)
+        monkeypatch.setenv("DISCORD_GUILD_ID", "123456789012345678")
+        monkeypatch.setenv("POSTGRES_DSN", "postgresql://user:pass@localhost/db")
+        monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
+        monkeypatch.setenv("ALLOWED_CHANNEL_IDS", "123,456,789")
+
+        settings = Settings()
+
+        assert settings.should_monitor_channel(123) is True
+        assert settings.should_monitor_channel(456) is True
+        assert settings.should_monitor_channel(789) is True
+        assert settings.should_monitor_channel(999) is False
+
+    def test_blocklist_filters_correctly(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test blocklist monitors all except specified channels."""
+        monkeypatch.setenv("DISCORD_TOKEN", "x" * 59)
+        monkeypatch.setenv("DISCORD_GUILD_ID", "123456789012345678")
+        monkeypatch.setenv("POSTGRES_DSN", "postgresql://user:pass@localhost/db")
+        monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
+        monkeypatch.setenv("BLOCKED_CHANNEL_IDS", "123,456")
+
+        settings = Settings()
+
+        assert settings.should_monitor_channel(123) is False
+        assert settings.should_monitor_channel(456) is False
+        assert settings.should_monitor_channel(789) is True
+        assert settings.should_monitor_channel(999) is True
+
+    def test_both_allowlist_and_blocklist_raises_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test using both allowlist and blocklist raises error."""
+        monkeypatch.setenv("DISCORD_TOKEN", "x" * 59)
+        monkeypatch.setenv("DISCORD_GUILD_ID", "123456789012345678")
+        monkeypatch.setenv("POSTGRES_DSN", "postgresql://user:pass@localhost/db")
+        monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
+        monkeypatch.setenv("ALLOWED_CHANNEL_IDS", "123")
+        monkeypatch.setenv("BLOCKED_CHANNEL_IDS", "456")
+
+        with pytest.raises(ValidationError) as exc_info:
+            Settings()
+
+        assert "Cannot use both" in str(exc_info.value)
+
+    def test_empty_string_parsing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test empty string is parsed as empty list."""
+        monkeypatch.setenv("DISCORD_TOKEN", "x" * 59)
+        monkeypatch.setenv("DISCORD_GUILD_ID", "123456789012345678")
+        monkeypatch.setenv("POSTGRES_DSN", "postgresql://user:pass@localhost/db")
+        monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
+        monkeypatch.setenv("ALLOWED_CHANNEL_IDS", "")
+
+        settings = Settings()
+
+        assert settings.allowed_channel_ids == []
+        assert settings.should_monitor_channel(123) is True
