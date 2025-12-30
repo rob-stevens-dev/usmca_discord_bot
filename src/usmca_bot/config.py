@@ -4,7 +4,7 @@ This module handles all configuration via Pydantic settings with environment var
 support and validation. Configuration can be loaded from .env files or environment.
 """
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field, PostgresDsn, RedisDsn, field_validator, ValidationInfo
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -89,6 +89,16 @@ class Settings(BaseSettings):
         description="Maximum Redis connection pool size",
         ge=10,
         le=500,
+    )
+
+    # Channel Filtering
+    allowed_channel_ids: list[int] = Field(
+        default_factory=list,
+        description="Whitelist of channel IDs to monitor (empty = all channels)",
+    )
+    blocked_channel_ids: list[int] = Field(
+        default_factory=list,
+        description="Blacklist of channel IDs to ignore",
     )
 
     # Bot Configuration
@@ -280,6 +290,46 @@ class Settings(BaseSettings):
                 f"toxicity_kick_threshold ({kick})"
             )
         return v
+    
+    @field_validator("allowed_channel_ids", "blocked_channel_ids", mode="before")
+    @classmethod
+    def parse_channel_ids(cls, v: Any) -> list[int]:
+        """Parse comma-separated channel IDs from environment.
+        
+        Args:
+            v: Channel IDs as string or list.
+            
+        Returns:
+            List of channel IDs.
+        """
+        if isinstance(v, str):
+            if not v.strip():
+                return []
+            return [int(x.strip()) for x in v.split(",") if x.strip()]
+        return v or []
+    
+    @field_validator("blocked_channel_ids")
+    @classmethod
+    def validate_channel_filtering(cls, v: list[int], info: ValidationInfo) -> list[int]:
+        """Ensure only one filtering method is used.
+        
+        Args:
+            v: Blocked channel IDs.
+            info: Validation info with other fields.
+            
+        Returns:
+            Validated blocked channel IDs.
+            
+        Raises:
+            ValueError: If both allowlist and blocklist are set.
+        """
+        allowed = info.data.get("allowed_channel_ids", [])
+        if allowed and v:
+            raise ValueError(
+                "Cannot use both allowed_channel_ids and blocked_channel_ids. "
+                "Use one or the other."
+            )
+        return v
 
     def get_timeout_duration(self, offense_count: int) -> int:
         """Get timeout duration based on offense count.
@@ -296,6 +346,26 @@ class Settings(BaseSettings):
             return self.timeout_second
         else:
             return self.timeout_third
+
+    def should_monitor_channel(self, channel_id: int) -> bool:
+        """Check if a channel should be monitored.
+        
+        Args:
+            channel_id: Discord channel ID.
+            
+        Returns:
+            True if channel should be monitored, False otherwise.
+        """
+        # If allowlist is set, only monitor those channels
+        if self.allowed_channel_ids:
+            return channel_id in self.allowed_channel_ids
+        
+        # If blocklist is set, monitor all except those
+        if self.blocked_channel_ids:
+            return channel_id not in self.blocked_channel_ids
+        
+        # Default: monitor all channels
+        return True
 
     def get_threshold_for_action(
         self, action: Literal["warning", "timeout", "kick", "ban"]
