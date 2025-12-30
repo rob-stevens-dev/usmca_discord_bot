@@ -400,25 +400,19 @@ class RedisClient:
         Raises:
             redis.RedisError: If Redis operation fails.
         """
-        if self.client is None:
-            raise RuntimeError("Redis not connected. Call connect() first.")
-
-        # Redis automatically handles TTL, but we can manually clean old patterns
-        now = datetime.now()
-        cutoff = now - timedelta(minutes=10)
-        
-        # This is a simple implementation - in production you might want
-        # to use SCAN for large datasets
-        pattern_keys = [
-            "brigade:joins:*",
-            "brigade:messages:*",
-        ]
-        
-        for pattern in pattern_keys:
-            keys = await self.client.keys(pattern)
+    if self.client is None:
+        raise RuntimeError("Redis not connected.")
+    
+    now = datetime.now()
+    cutoff = now - timedelta(minutes=10)
+    
+    patterns = ["brigade:joins:*", "brigade:messages:*"]
+    
+    for pattern in patterns:
+        cursor = 0
+        while True:
+            cursor, keys = await self.client.scan(cursor, match=pattern, count=100)
             for key in keys:
-                # Check if key represents old data based on timestamp in key
-                # Format: brigade:joins:YYYYMMDDHHMM
                 try:
                     timestamp_str = key.split(":")[-1]
                     if timestamp_str.isdigit() and len(timestamp_str) == 12:
@@ -426,5 +420,7 @@ class RedisClient:
                         if key_time < cutoff:
                             await self.client.delete(key)
                 except (ValueError, IndexError):
-                    # If we can't parse the timestamp, leave it alone
                     pass
+            
+            if cursor == 0:
+                break

@@ -6,7 +6,7 @@ support and validation. Configuration can be loaded from .env files or environme
 
 from typing import Literal
 
-from pydantic import Field, PostgresDsn, RedisDsn, field_validator
+from pydantic import Field, PostgresDsn, RedisDsn, field_validator, ValidationInfo
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -191,7 +191,7 @@ class Settings(BaseSettings):
 
     @field_validator("postgres_max_pool_size")
     @classmethod
-    def validate_pool_size(cls, v: int, info: dict) -> int:
+    def validate_pool_size(cls, v: int, info: ValidationInfo) -> int:
         """Validate that max pool size is greater than min pool size.
 
         Args:
@@ -205,7 +205,7 @@ class Settings(BaseSettings):
             ValueError: If max pool size is not greater than min pool size.
         """
         if "postgres_min_pool_size" in info.data:
-            min_size = info.data["postgres_min_pool_size"]
+            min_size = info.data.get("postgres_min_pool_size")
             if v <= min_size:
                 raise ValueError(
                     f"postgres_max_pool_size ({v}) must be greater than "

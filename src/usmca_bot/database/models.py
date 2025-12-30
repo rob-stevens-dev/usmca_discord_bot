@@ -49,7 +49,6 @@ class ToxicityScores(BaseModel):
             self.identity_attack,
         )
 
-    @property
     def is_toxic(self, threshold: float = 0.5) -> bool:
         """Check if any score exceeds the toxicity threshold.
 
@@ -114,7 +113,6 @@ class User(BaseModel):
         """
         return self.warnings + self.timeouts + self.kicks + self.bans
 
-    @property
     def is_new_account(self, days: int = 7) -> bool:
         """Check if account is considered new.
 
