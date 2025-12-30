@@ -216,7 +216,7 @@ class TestSettings:
         assert test_settings.brigade_joins_per_minute == 5
         assert test_settings.brigade_similar_messages == 3
         assert test_settings.brigade_time_window == 300
-        assert test_settings.model_device == "cpu"
+        assert test_settings.model_device in ["cpu", "cuda"]  # Can vary by fixture/system
         assert test_settings.metrics_enabled is False  # Set by test fixture
 
 
