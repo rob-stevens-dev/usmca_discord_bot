@@ -290,6 +290,4 @@ COMMENT ON TABLE users IS 'Discord user profiles with behavior tracking';
 COMMENT ON TABLE messages IS 'Message archive for pattern analysis and audit trail';
 COMMENT ON TABLE moderation_actions IS 'Log of all moderation actions taken';
 COMMENT ON TABLE appeals IS 'User appeals of moderation actions';
-COMMENT ON TABLE brigade_events IS 'Detected brigade/coordinated attack events';
-COMMENT ON TABLE configuration IS 'Bot configuration storage';
-COMMENT ON TABLE daily_stats IS 'Daily aggregated statistics';
+COMMENT ON TABLE brigade_events IS 'Detected briga

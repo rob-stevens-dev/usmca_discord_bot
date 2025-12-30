@@ -13,7 +13,6 @@ AI-powered Discord auto-moderation system with behavioral analysis. Provides aut
 - **Privacy-Focused**: All data stays local, no third-party services
 
 ## Architecture
-
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                    Discord Server                        │
@@ -59,7 +58,6 @@ AI-powered Discord auto-moderation system with behavioral analysis. Provides aut
 ## Installation
 
 ### Development Setup
-
 ```bash
 # Clone repository
 git clone https://github.com/yourusername/usmca_bot.git
@@ -77,7 +75,6 @@ pre-commit install
 ```
 
 ### Database Setup
-
 ```bash
 # PostgreSQL
 createdb usmca_bot
@@ -88,7 +85,6 @@ redis-server
 ```
 
 ### Configuration
-
 ```bash
 # Copy example environment file
 cp .env.example .env
@@ -101,7 +97,6 @@ cp .env.example .env
 ```
 
 ## Usage
-
 ```bash
 # Run the bot
 usmca-bot
@@ -132,7 +127,6 @@ See `config.example.yaml` for full configuration options including:
 - Database connection pools
 
 ## Project Structure
-
 ```
 usmca_bot/
 ├── src/
@@ -180,7 +174,6 @@ usmca_bot/
 ## Testing
 
 Test coverage target: >95%
-
 ```bash
 # Run all tests
 pytest
