@@ -46,16 +46,27 @@ class TestBehaviorAnalyzer:
             sample_user: Sample user fixture.
             sample_message: Sample message fixture.
         """
-        # User with low toxicity
-        sample_user.toxicity_avg = 0.1
-        sample_user.total_infractions = 0
+        # Create user with low toxicity - use model constructor instead of setting properties
+        low_risk_user = User(
+            user_id=sample_user.user_id,
+            username=sample_user.username,
+            discriminator=sample_user.discriminator,
+            display_name=sample_user.display_name,
+            joined_at=sample_user.joined_at,
+            toxicity_avg=0.1,
+            warnings=0,
+            timeouts=0,
+            kicks=0,
+            bans=0,
+            total_messages=10,
+        )
 
         messages = [sample_message for _ in range(10)]
         
-        score = await analyzer.analyze_user(sample_user, messages)
+        score = await analyzer.analyze_user(low_risk_user, messages)
 
         assert isinstance(score, BehaviorScore)
-        assert score.user_id == sample_user.user_id
+        assert score.user_id == low_risk_user.user_id
         assert score.final_score < 0.5
         assert score.risk_level == "green"
 
@@ -73,16 +84,45 @@ class TestBehaviorAnalyzer:
             sample_user: Sample user fixture.
             sample_message: Sample message fixture.
         """
-        # User with high toxicity and infractions
-        sample_user.toxicity_avg = 0.8
-        sample_user.warnings = 2
-        sample_user.timeouts = 1
+        # Create user with high toxicity and infractions
+        high_risk_user = User(
+            user_id=sample_user.user_id,
+            username=sample_user.username,
+            discriminator=sample_user.discriminator,
+            display_name=sample_user.display_name,
+            joined_at=sample_user.joined_at,
+            toxicity_avg=0.8,
+            warnings=2,
+            timeouts=1,
+            kicks=0,
+            bans=0,
+            total_messages=10,
+        )
 
         messages = [sample_message for _ in range(10)]
         for msg in messages:
-            msg.toxicity_score = 0.85
+            # Create new messages with high toxicity instead of modifying
+            pass  # Messages already have toxicity scores from fixture
 
-        score = await analyzer.analyze_user(sample_user, messages)
+        # Create high toxicity messages
+        high_tox_messages = []
+        for i, msg in enumerate(messages):
+            high_tox_msg = Message(
+                message_id=msg.message_id + i,
+                user_id=high_risk_user.user_id,
+                channel_id=msg.channel_id,
+                guild_id=msg.guild_id,
+                content=msg.content,
+                toxicity_score=0.85,
+                severe_toxicity_score=0.7,
+                obscene_score=0.6,
+                threat_score=0.5,
+                insult_score=0.75,
+                identity_attack_score=0.4,
+            )
+            high_tox_messages.append(high_tox_msg)
+
+        score = await analyzer.analyze_user(high_risk_user, high_tox_messages)
 
         assert score.final_score > 0.7
         assert score.risk_level in ["orange", "red"]
@@ -163,11 +203,20 @@ class TestBehaviorAnalyzer:
             analyzer: BehaviorAnalyzer fixture.
             sample_user: Sample user fixture.
         """
-        sample_user.warnings = 0
-        sample_user.timeouts = 0
-        sample_user.kicks = 0
+        # Create user with no infractions
+        clean_user = User(
+            user_id=sample_user.user_id,
+            username=sample_user.username,
+            discriminator=sample_user.discriminator,
+            display_name=sample_user.display_name,
+            joined_at=sample_user.joined_at,
+            warnings=0,
+            timeouts=0,
+            kicks=0,
+            bans=0,
+        )
 
-        multiplier = analyzer._calculate_history_multiplier(sample_user)
+        multiplier = analyzer._calculate_history_multiplier(clean_user)
 
         assert multiplier == 1.0
 
@@ -180,10 +229,20 @@ class TestBehaviorAnalyzer:
             analyzer: BehaviorAnalyzer fixture.
             sample_user: Sample user fixture.
         """
-        sample_user.warnings = 2
-        sample_user.timeouts = 1
+        # Create user with infractions
+        user_with_infractions = User(
+            user_id=sample_user.user_id,
+            username=sample_user.username,
+            discriminator=sample_user.discriminator,
+            display_name=sample_user.display_name,
+            joined_at=sample_user.joined_at,
+            warnings=2,
+            timeouts=1,
+            kicks=0,
+            bans=0,
+        )
 
-        multiplier = analyzer._calculate_history_multiplier(sample_user)
+        multiplier = analyzer._calculate_history_multiplier(user_with_infractions)
 
         assert multiplier > 1.0
 
@@ -197,9 +256,15 @@ class TestBehaviorAnalyzer:
             sample_user: Sample user fixture.
         """
         # Account less than 1 day old
-        sample_user.joined_at = datetime.now(timezone.utc) - timedelta(hours=12)
+        new_user = User(
+            user_id=sample_user.user_id,
+            username=sample_user.username,
+            discriminator=sample_user.discriminator,
+            display_name=sample_user.display_name,
+            joined_at=datetime.now(timezone.utc) - timedelta(hours=12),
+        )
 
-        multiplier = analyzer._calculate_new_account_multiplier(sample_user)
+        multiplier = analyzer._calculate_new_account_multiplier(new_user)
 
         assert multiplier > 1.0
 
@@ -213,9 +278,15 @@ class TestBehaviorAnalyzer:
             sample_user: Sample user fixture.
         """
         # Account 30 days old
-        sample_user.joined_at = datetime.now(timezone.utc) - timedelta(days=30)
+        old_user = User(
+            user_id=sample_user.user_id,
+            username=sample_user.username,
+            discriminator=sample_user.discriminator,
+            display_name=sample_user.display_name,
+            joined_at=datetime.now(timezone.utc) - timedelta(days=30),
+        )
 
-        multiplier = analyzer._calculate_new_account_multiplier(sample_user)
+        multiplier = analyzer._calculate_new_account_multiplier(old_user)
 
         assert multiplier == 1.0
 
@@ -254,9 +325,17 @@ class TestBehaviorAnalyzer:
             analyzer: BehaviorAnalyzer fixture.
             sample_user: Sample user fixture.
         """
-        sample_user.is_whitelisted = True
+        # Create whitelisted user
+        whitelisted_user = User(
+            user_id=sample_user.user_id,
+            username=sample_user.username,
+            discriminator=sample_user.discriminator,
+            display_name=sample_user.display_name,
+            joined_at=sample_user.joined_at,
+            is_whitelisted=True,
+        )
 
-        risk_level = analyzer._determine_risk_level(0.9, sample_user)
+        risk_level = analyzer._determine_risk_level(0.9, whitelisted_user)
 
         assert risk_level == "green"
 
@@ -274,13 +353,24 @@ class TestBehaviorAnalyzer:
             sample_user: Sample user fixture.
             mock_postgres_client: Mock PostgreSQL client.
         """
-        sample_user.total_infractions = 5
+        # Create repeat offender user
+        repeat_offender = User(
+            user_id=sample_user.user_id,
+            username=sample_user.username,
+            discriminator=sample_user.discriminator,
+            display_name=sample_user.display_name,
+            joined_at=sample_user.joined_at,
+            warnings=3,
+            timeouts=2,
+            kicks=0,
+            bans=0,
+        )
 
         # Mock action history
         mock_postgres_client.get_user_action_history = AsyncMock(return_value=[])
 
         should_escalate, reason = await analyzer.should_escalate_action(
-            sample_user, 0.75
+            repeat_offender, 0.75
         )
 
         assert should_escalate is True
@@ -299,10 +389,16 @@ class TestBehaviorAnalyzer:
             sample_user: Sample user fixture.
         """
         # New account with few messages
-        sample_user.joined_at = datetime.now(timezone.utc) - timedelta(days=2)
-        sample_user.total_messages = 5
+        new_user = User(
+            user_id=sample_user.user_id,
+            username=sample_user.username,
+            discriminator=sample_user.discriminator,
+            display_name=sample_user.display_name,
+            joined_at=datetime.now(timezone.utc) - timedelta(days=2),
+            total_messages=5,
+        )
 
-        context_score = await analyzer.get_context_score(sample_user, 0.5)
+        context_score = await analyzer.get_context_score(new_user, 0.5)
 
         assert context_score > 0.0
         assert context_score <= 1.0
