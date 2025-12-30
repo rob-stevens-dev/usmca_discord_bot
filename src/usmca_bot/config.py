@@ -215,7 +215,7 @@ class Settings(BaseSettings):
 
     @field_validator("toxicity_timeout_threshold")
     @classmethod
-    def validate_timeout_threshold(cls, v: float, info: dict) -> float:
+    def validate_timeout_threshold(cls, v: float, info: ValidationInfo) -> float:
         """Validate that timeout threshold is greater than warning threshold.
 
         Args:
@@ -229,7 +229,7 @@ class Settings(BaseSettings):
             ValueError: If threshold ordering is invalid.
         """
         if "toxicity_warning_threshold" in info.data:
-            warning = info.data["toxicity_warning_threshold"]
+            warning = info.data.get("toxicity_warning_threshold")
             if v <= warning:
                 raise ValueError(
                     f"toxicity_timeout_threshold ({v}) must be greater than "
