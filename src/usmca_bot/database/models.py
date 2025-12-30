@@ -4,11 +4,20 @@ This module defines Pydantic models for all database entities, providing
 type safety, validation, and serialization.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
+
+
+def utcnow() -> datetime:
+    """Get current UTC datetime.
+    
+    Returns:
+        Current datetime in UTC timezone.
+    """
+    return datetime.now(timezone.utc)
 
 
 class ToxicityScores(BaseModel):
@@ -47,7 +56,7 @@ class ToxicityScores(BaseModel):
             True if any score exceeds threshold.
         
         Example:
-            >>> scores = ToxicityScores(toxicity=0.8, ...)
+            >>> scores = ToxicityScores(toxicity=0.8, severe_toxicity=0.1, obscene=0.1, threat=0.1, insult=0.1, identity_attack=0.1)
             >>> scores.is_toxic()  # Uses default 0.5
             True
             >>> scores.is_toxic(0.9)  # Custom threshold
@@ -96,8 +105,8 @@ class User(BaseModel):
     risk_level: Literal["green", "yellow", "orange", "red"] = "green"
     is_whitelisted: bool = False
     notes: str | None = None
-    created_at: datetime = Field(default_factory=datetime.now)
-    updated_at: datetime = Field(default_factory=datetime.now)
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
 
     @property
     def total_infractions(self) -> int:
@@ -118,13 +127,13 @@ class User(BaseModel):
             True if account joined within the specified days.
         
         Example:
-            >>> user = User(joined_at=datetime.now() - timedelta(days=3), ...)
+            >>> from datetime import timedelta
+            >>> user = User(user_id=123, username="test", joined_at=datetime.now(timezone.utc) - timedelta(days=3))
             >>> user.is_new_account()  # Uses default 7 days
             True
             >>> user.is_new_account(30)  # Custom threshold
             True
         """
-        from datetime import timezone
         age = datetime.now(timezone.utc) - self.joined_at
         return age.days < days
 
@@ -167,8 +176,8 @@ class Message(BaseModel):
     is_edited: bool = False
     is_deleted: bool = False
     deleted_at: datetime | None = None
-    created_at: datetime = Field(default_factory=datetime.now)
-    updated_at: datetime = Field(default_factory=datetime.now)
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
 
     @classmethod
     def from_toxicity_scores(
@@ -250,7 +259,7 @@ class ModerationAction(BaseModel):
     expires_at: datetime | None = None
     appealed: bool = False
     appeal_id: int | None = None
-    created_at: datetime = Field(default_factory=datetime.now)
+    created_at: datetime = Field(default_factory=utcnow)
 
     @field_validator("expires_at")
     @classmethod
@@ -298,8 +307,8 @@ class Appeal(BaseModel):
     reviewed_by: int | None = Field(default=None, gt=0)
     reviewed_by_name: str | None = None
     reviewed_at: datetime | None = None
-    created_at: datetime = Field(default_factory=datetime.now)
-    updated_at: datetime = Field(default_factory=datetime.now)
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
 
 
 class BrigadeEvent(BaseModel):
@@ -321,7 +330,7 @@ class BrigadeEvent(BaseModel):
 
     id: int | None = None
     event_uuid: UUID | None = None
-    detected_at: datetime = Field(default_factory=datetime.now)
+    detected_at: datetime = Field(default_factory=utcnow)
     participant_count: int = Field(gt=0)
     confidence_score: float = Field(ge=0.0, le=1.0)
     detection_type: Literal["join_spike", "message_similarity", "coordinated_activity"]
@@ -329,4 +338,4 @@ class BrigadeEvent(BaseModel):
     is_resolved: bool = False
     resolved_at: datetime | None = None
     resolution_notes: str | None = None
-    created_at: datetime = Field(default_factory=datetime.now)
+    created_at: datetime = Field(default_factory=utcnow)

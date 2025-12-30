@@ -204,13 +204,12 @@ class Settings(BaseSettings):
         Raises:
             ValueError: If max pool size is not greater than min pool size.
         """
-        if "postgres_min_pool_size" in info.data:
-            min_size = info.data.get("postgres_min_pool_size")
-            if v <= min_size:
-                raise ValueError(
-                    f"postgres_max_pool_size ({v}) must be greater than "
-                    f"postgres_min_pool_size ({min_size})"
-                )
+        min_size = info.data.get("postgres_min_pool_size")
+        if min_size is not None and v <= min_size:
+            raise ValueError(
+                f"postgres_max_pool_size ({v}) must be greater than "
+                f"postgres_min_pool_size ({min_size})"
+            )
         return v
 
     @field_validator("toxicity_timeout_threshold")
@@ -228,18 +227,17 @@ class Settings(BaseSettings):
         Raises:
             ValueError: If threshold ordering is invalid.
         """
-        if "toxicity_warning_threshold" in info.data:
-            warning = info.data.get("toxicity_warning_threshold")
-            if v <= warning:
-                raise ValueError(
-                    f"toxicity_timeout_threshold ({v}) must be greater than "
-                    f"toxicity_warning_threshold ({warning})"
-                )
+        warning = info.data.get("toxicity_warning_threshold")
+        if warning is not None and v <= warning:
+            raise ValueError(
+                f"toxicity_timeout_threshold ({v}) must be greater than "
+                f"toxicity_warning_threshold ({warning})"
+            )
         return v
 
     @field_validator("toxicity_kick_threshold")
     @classmethod
-    def validate_kick_threshold(cls, v: float, info: dict) -> float:
+    def validate_kick_threshold(cls, v: float, info: ValidationInfo) -> float:
         """Validate that kick threshold is greater than timeout threshold.
 
         Args:
@@ -252,18 +250,17 @@ class Settings(BaseSettings):
         Raises:
             ValueError: If threshold ordering is invalid.
         """
-        if "toxicity_timeout_threshold" in info.data:
-            timeout = info.data["toxicity_timeout_threshold"]
-            if v <= timeout:
-                raise ValueError(
-                    f"toxicity_kick_threshold ({v}) must be greater than "
-                    f"toxicity_timeout_threshold ({timeout})"
-                )
+        timeout = info.data.get("toxicity_timeout_threshold")
+        if timeout is not None and v <= timeout:
+            raise ValueError(
+                f"toxicity_kick_threshold ({v}) must be greater than "
+                f"toxicity_timeout_threshold ({timeout})"
+            )
         return v
 
     @field_validator("toxicity_ban_threshold")
     @classmethod
-    def validate_ban_threshold(cls, v: float, info: dict) -> float:
+    def validate_ban_threshold(cls, v: float, info: ValidationInfo) -> float:
         """Validate that ban threshold is greater than kick threshold.
 
         Args:
@@ -276,13 +273,12 @@ class Settings(BaseSettings):
         Raises:
             ValueError: If threshold ordering is invalid.
         """
-        if "toxicity_kick_threshold" in info.data:
-            kick = info.data["toxicity_kick_threshold"]
-            if v <= kick:
-                raise ValueError(
-                    f"toxicity_ban_threshold ({v}) must be greater than "
-                    f"toxicity_kick_threshold ({kick})"
-                )
+        kick = info.data.get("toxicity_kick_threshold")
+        if kick is not None and v <= kick:
+            raise ValueError(
+                f"toxicity_ban_threshold ({v}) must be greater than "
+                f"toxicity_kick_threshold ({kick})"
+            )
         return v
 
     def get_timeout_duration(self, offense_count: int) -> int:
