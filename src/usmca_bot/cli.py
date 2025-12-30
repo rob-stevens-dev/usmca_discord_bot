@@ -22,6 +22,17 @@ def setup_logging(settings: Settings) -> None:
     Args:
         settings: Application settings.
     """
+    # Map log level string to numeric value
+    log_level_map = {
+        "DEBUG": 10,
+        "INFO": 20,
+        "WARNING": 30,
+        "ERROR": 40,
+        "CRITICAL": 50,
+    }
+    
+    log_level = log_level_map.get(settings.log_level.upper(), 20)  # Default to INFO
+    
     # Configure structlog
     structlog.configure(
         processors=[
@@ -33,9 +44,7 @@ def setup_logging(settings: Settings) -> None:
             if settings.environment == "development"
             else structlog.processors.JSONRenderer(),
         ],
-        wrapper_class=structlog.make_filtering_bound_logger(
-            getattr(structlog.stdlib, settings.log_level.upper(), structlog.INFO)
-        ),
+        wrapper_class=structlog.make_filtering_bound_logger(log_level),
         context_class=dict,
         logger_factory=structlog.PrintLoggerFactory(),
         cache_logger_on_first_use=True,
