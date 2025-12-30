@@ -6,7 +6,7 @@ message deduplication, and caching.
 
 import hashlib
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import redis.asyncio as redis
@@ -84,7 +84,7 @@ class RedisClient:
             raise RuntimeError("Redis not connected. Call connect() first.")
 
         key = f"rate:user:{user_id}:messages"
-        now = datetime.now().timestamp()
+        now = datetime.now(timezone.utc).timestamp()
         window_start = now - window_seconds
 
         # Use pipeline for atomic operations
@@ -127,7 +127,7 @@ class RedisClient:
             raise RuntimeError("Redis not connected. Call connect() first.")
 
         key = "rate:global:messages"
-        now = datetime.now().timestamp()
+        now = datetime.now(timezone.utc).timestamp()
         window_start = now - window_seconds
 
         pipe = self.client.pipeline()
@@ -148,6 +148,8 @@ class RedisClient:
         self, message_id: int, ttl_seconds: int = 60
     ) -> bool:
         """Check if message has already been processed.
+
+        Uses Redis SET NX (set if not exists) to atomically mark messages.
 
         Args:
             message_id: Discord message ID.
@@ -188,7 +190,7 @@ class RedisClient:
             raise RuntimeError("Redis not connected. Call connect() first.")
 
         key = f"timeout:{user_id}"
-        ttl = int((expires_at - datetime.now()).total_seconds())
+        ttl = int((expires_at - datetime.now(timezone.utc)).total_seconds())
         
         if ttl > 0:
             await self.client.setex(key, ttl, expires_at.isoformat())
@@ -306,7 +308,7 @@ class RedisClient:
         if self.client is None:
             raise RuntimeError("Redis not connected. Call connect() first.")
 
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         user_ids: set[int] = set()
         
         for i in range(minutes):
@@ -396,31 +398,43 @@ class RedisClient:
         """Clean up expired brigade detection data.
 
         This is a maintenance task that should be run periodically.
+        Uses SCAN instead of KEYS for production safety.
 
         Raises:
             redis.RedisError: If Redis operation fails.
         """
-    if self.client is None:
-        raise RuntimeError("Redis not connected.")
-    
-    now = datetime.now()
-    cutoff = now - timedelta(minutes=10)
-    
-    patterns = ["brigade:joins:*", "brigade:messages:*"]
-    
-    for pattern in patterns:
-        cursor = 0
-        while True:
-            cursor, keys = await self.client.scan(cursor, match=pattern, count=100)
-            for key in keys:
-                try:
-                    timestamp_str = key.split(":")[-1]
-                    if timestamp_str.isdigit() and len(timestamp_str) == 12:
-                        key_time = datetime.strptime(timestamp_str, "%Y%m%d%H%M")
-                        if key_time < cutoff:
-                            await self.client.delete(key)
-                except (ValueError, IndexError):
-                    pass
-            
-            if cursor == 0:
-                break
+        if self.client is None:
+            raise RuntimeError("Redis not connected. Call connect() first.")
+        
+        now = datetime.now(timezone.utc)
+        cutoff = now - timedelta(minutes=10)
+        
+        patterns = ["brigade:joins:*", "brigade:messages:*"]
+        
+        for pattern in patterns:
+            cursor = 0
+            while True:
+                # Use SCAN instead of KEYS for production safety
+                cursor, keys = await self.client.scan(cursor, match=pattern, count=100)
+                
+                for key in keys:
+                    try:
+                        # Parse timestamp from key (format: brigade:joins:YYYYMMDDHHMM)
+                        parts = key.split(":")
+                        if len(parts) >= 3:
+                            timestamp_str = parts[-1]
+                            # Check if it's a valid timestamp format
+                            if timestamp_str.isdigit() and len(timestamp_str) == 12:
+                                key_time = datetime.strptime(timestamp_str, "%Y%m%d%H%M")
+                                # Make it timezone-aware for comparison
+                                key_time = key_time.replace(tzinfo=timezone.utc)
+                                
+                                if key_time < cutoff:
+                                    await self.client.delete(key)
+                    except (ValueError, IndexError):
+                        # Skip malformed keys
+                        pass
+                
+                # SCAN returns 0 when iteration is complete
+                if cursor == 0:
+                    break

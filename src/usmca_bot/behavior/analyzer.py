@@ -97,12 +97,10 @@ class BehaviorAnalyzer:
             BehaviorScore containing analysis results.
 
         Example:
-```python
-            analyzer = BehaviorAnalyzer(settings, db)
-            user = await db.get_user(user_id)
-            score = await analyzer.analyze_user(user)
-            print(f"Risk level: {score.risk_level}")
-```
+            >>> analyzer = BehaviorAnalyzer(settings, db)
+            >>> user = await db.get_user(user_id)
+            >>> score = await analyzer.analyze_user(user)
+            >>> print(f"Risk level: {score.risk_level}")
         """
         self._logger.debug("analyzing_user", user_id=user.user_id)
 
@@ -219,16 +217,21 @@ class BehaviorAnalyzer:
         recent_5 = recent_messages[:5]
         previous_5 = recent_messages[5:10]
 
-        recent_avg = sum(
-            m.toxicity_score for m in recent_5 if m.toxicity_score is not None
-        ) / len([m for m in recent_5 if m.toxicity_score is not None])
+        # Extract toxicity scores, filtering out None values
+        recent_scores = [m.toxicity_score for m in recent_5 if m.toxicity_score is not None]
+        previous_scores = [m.toxicity_score for m in previous_5 if m.toxicity_score is not None]
 
-        previous_avg = sum(
-            m.toxicity_score for m in previous_5 if m.toxicity_score is not None
-        ) / len([m for m in previous_5 if m.toxicity_score is not None])
-
-        if previous_avg == 0:
+        # Guard against empty lists (division by zero)
+        if not recent_scores or not previous_scores:
             return 1.0
+
+        recent_avg = sum(recent_scores) / len(recent_scores)
+        previous_avg = sum(previous_scores) / len(previous_scores)
+
+        # Guard against zero division
+        if previous_avg == 0:
+            # If previous was 0 but recent is positive, that's escalation
+            return 2.0 if recent_avg > 0 else 1.0
 
         # Calculate escalation ratio
         escalation_ratio = recent_avg / previous_avg
