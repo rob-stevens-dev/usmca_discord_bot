@@ -132,6 +132,39 @@ class ActionExecutor:
 
         start_time = time.perf_counter()
 
+        # CHECK DRY RUN MODE FIRST
+        if self.settings.dry_run_mode:
+            self._logger.info(
+                "dry_run_action",
+                action_type=decision.action_type,
+                user_id=user.id,
+                username=str(user),
+                reason=decision.reason,
+                toxicity_score=decision.toxicity_score,
+                behavior_score=decision.behavior_score,
+                confidence=decision.confidence,
+                would_delete_message=message is not None,
+                would_send_dm=True,
+                timeout_duration=decision.timeout_duration if decision.timeout_duration else None,
+            )
+            
+            # Return success without actually doing anything
+            execution_time = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
+            return ActionResult(
+                success=True,
+                action_type=decision.action_type,
+                user_id=user.id,
+                message_id=message.id if message else None,
+                notified_user=False,  # Didn't actually send
+                message_deleted=False,  # Didn't actually delete  
+                recorded_in_db=False,  # Didn't actually record
+                execution_time_ms=execution_time,
+                details={
+                    "dry_run": True,
+                    "would_execute": decision.to_dict(),
+                },
+            )
+
         self._logger.info(
             "executing_action",
             action_type=decision.action_type,
