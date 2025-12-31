@@ -105,7 +105,7 @@ class ActionExecutor:
     async def execute_action(
         self,
         decision: ActionDecision,
-        user: User,
+        user: discord.User | discord.Member,  # ← Accept Discord types
         message: discord.Message | None = None,
         notification_message: str | None = None,
     ) -> ActionResult:
@@ -145,11 +145,11 @@ class ActionExecutor:
                 confidence=decision.confidence,
                 would_delete_message=message is not None,
                 would_send_dm=True,
-                timeout_duration=decision.timeout_duration if decision.timeout_duration else None,
+                timeout_duration=decision.duration_seconds if decision.duration_seconds else None,
             )
             
             # Return success without actually doing anything
-            execution_time = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
+            execution_time = (time.perf_counter() - start_time) * 1000
             return ActionResult(
                 success=True,
                 action_type=decision.action_type,

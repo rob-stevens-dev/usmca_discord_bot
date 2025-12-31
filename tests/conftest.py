@@ -227,6 +227,24 @@ async def mock_classification_engine() -> AsyncMock:
 
     return engine
 
+@pytest.fixture
+def mock_discord_member() -> MagicMock:
+    """Create a mock Discord member (guild-specific user)."""
+    member = MagicMock()
+    member.id = 123456789012345678
+    member.name = "testuser"
+    member.discriminator = "1234"
+    member.display_name = "Test User"
+    member.timeout = AsyncMock()
+    member.send = AsyncMock()
+    return member
+
+@pytest.fixture
+def mock_discord_bot() -> MagicMock:
+    """Create a mock Discord bot client."""
+    bot = MagicMock()
+    bot.get_guild = MagicMock()
+    return bot
 
 # Markers for test categorization
 def pytest_configure(config: pytest.Config) -> None:

@@ -4,7 +4,7 @@ This module handles all configuration via Pydantic settings with environment var
 support and validation. Configuration can be loaded from .env files or environment.
 """
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import Field, PostgresDsn, RedisDsn, field_validator, ValidationInfo
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -98,13 +98,15 @@ class Settings(BaseSettings):
     )
 
     # Channel Filtering
-    allowed_channel_ids: list[int] = Field(
-        default_factory=list,
-        description="Whitelist of channel IDs to monitor (empty = all channels)",
+    allowed_channel_ids_str: str = Field(
+        default="",
+        description="Comma-separated channel IDs to monitor (empty = all channels)",
+        alias="ALLOWED_CHANNEL_IDS",
     )
-    blocked_channel_ids: list[int] = Field(
-        default_factory=list,
-        description="Blacklist of channel IDs to ignore",
+    blocked_channel_ids_str: str = Field(
+        default="",
+        description="Comma-separated channel IDs to ignore",
+        alias="BLOCKED_CHANNEL_IDS",
     )
 
     # Bot Configuration
@@ -205,6 +207,34 @@ class Settings(BaseSettings):
         description="Whether to enable Prometheus metrics",
     )
 
+    @property
+    def allowed_channel_ids(self) -> list[int]:
+        """Parse allowed channel IDs from string.
+        
+        Returns:
+            List of allowed channel IDs.
+        """
+        if not self.allowed_channel_ids_str.strip():
+            return []
+        try:
+            return [int(x.strip()) for x in self.allowed_channel_ids_str.split(",") if x.strip()]
+        except ValueError:
+            return []
+    
+    @property
+    def blocked_channel_ids(self) -> list[int]:
+        """Parse blocked channel IDs from string.
+        
+        Returns:
+            List of blocked channel IDs.
+        """
+        if not self.blocked_channel_ids_str.strip():
+            return []
+        try:
+            return [int(x.strip()) for x in self.blocked_channel_ids_str.split(",") if x.strip()]
+        except ValueError:
+            return []
+
     @field_validator("postgres_max_pool_size")
     @classmethod
     def validate_pool_size(cls, v: int, info: ValidationInfo) -> int:
@@ -296,43 +326,27 @@ class Settings(BaseSettings):
                 f"toxicity_kick_threshold ({kick})"
             )
         return v
-    
-    @field_validator("allowed_channel_ids", "blocked_channel_ids", mode="before")
-    @classmethod
-    def parse_channel_ids(cls, v: Any) -> list[int]:
-        """Parse comma-separated channel IDs from environment.
         
-        Args:
-            v: Channel IDs as string or list.
-            
-        Returns:
-            List of channel IDs.
-        """
-        if isinstance(v, str):
-            if not v.strip():
-                return []
-            return [int(x.strip()) for x in v.split(",") if x.strip()]
-        return v or []
-    
-    @field_validator("blocked_channel_ids")
+    @field_validator("blocked_channel_ids_str")
     @classmethod
-    def validate_channel_filtering(cls, v: list[int], info: ValidationInfo) -> list[int]:
+    def validate_channel_filtering(cls, v: str, info: ValidationInfo) -> str:
         """Ensure only one filtering method is used.
         
         Args:
-            v: Blocked channel IDs.
+            v: Blocked channel IDs string.
             info: Validation info with other fields.
             
         Returns:
-            Validated blocked channel IDs.
+            Validated blocked channel IDs string.
             
         Raises:
             ValueError: If both allowlist and blocklist are set.
         """
-        allowed = info.data.get("allowed_channel_ids", [])
-        if allowed and v:
+        allowed = info.data.get("allowed_channel_ids_str", "")
+        # Both are non-empty strings
+        if allowed.strip() and v.strip():
             raise ValueError(
-                "Cannot use both allowed_channel_ids and blocked_channel_ids. "
+                "Cannot use both ALLOWED_CHANNEL_IDS and BLOCKED_CHANNEL_IDS. "
                 "Use one or the other."
             )
         return v
@@ -366,11 +380,10 @@ class Settings(BaseSettings):
         if self.allowed_channel_ids:
             return channel_id in self.allowed_channel_ids
         
-        # If blocklist is set, monitor all except those
         if self.blocked_channel_ids:
-            return channel_id not in self.blocked_channel_ids
-        
-        # Default: monitor all channels
+            return channel_id not in self.blocked_channel_ids        
+
+        # Default: monitor all channels        
         return True
 
     def get_threshold_for_action(
