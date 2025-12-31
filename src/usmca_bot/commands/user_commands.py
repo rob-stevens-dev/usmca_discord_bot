@@ -7,6 +7,7 @@ viewing user information, and pardoning actions.
 import discord
 
 from usmca_bot.commands.base import BaseCommand, CommandContext, InvalidArgumentError
+from usmca_bot.database.models import ModerationAction
 
 
 class WhitelistCommand(BaseCommand):
@@ -64,9 +65,7 @@ class WhitelistCommand(BaseCommand):
         chunk_size = 10
         for i in range(0, len(users), chunk_size):
             chunk = users[i : i + chunk_size]
-            user_list = "\n".join(
-                f"• <@{user.user_id}> ({user.username})" for user in chunk
-            )
+            user_list = "\n".join(f"• <@{user.user_id}> ({user.username})" for user in chunk)
             embed.add_field(
                 name=f"Users {i + 1}-{min(i + chunk_size, len(users))}",
                 value=user_list,
@@ -160,7 +159,9 @@ class UserInfoCommand(BaseCommand):
         # Get user from database
         db_user = await ctx.db.get_user(target_user.id)
         if db_user is None:
-            await ctx.reply(f"No data found for {target_user.mention}. They haven't sent any messages yet.")
+            await ctx.reply(
+                f"No data found for {target_user.mention}. They haven't sent any messages yet."
+            )
             return
 
         # Create info embed
@@ -312,12 +313,15 @@ class PardonCommand(BaseCommand):
         await ctx.db.clear_user_infractions(target_user.id)
 
         # Log the pardon as a moderation action
-        await ctx.db.create_moderation_action(
+        action = ModerationAction(
             user_id=target_user.id,
-            action_type="pardon",
-            reason=f"Pardoned by {ctx.author.name}: {reason}",
+            action_type="unban",
+            reason=reason,
+            is_automated=False,
             moderator_id=ctx.author.id,
+            moderator_name=str(ctx.author),
         )
+        await ctx.db.create_moderation_action(action)
 
         await ctx.reply_success(
             f"Pardoned {target_user.mention}.\n"
@@ -350,30 +354,29 @@ class UnbanCommand(BaseCommand):
 
         try:
             user_id = int(ctx.args[0])
-        except ValueError:
-            raise InvalidArgumentError(f"Invalid user ID '{ctx.args[0]}'. Must be a number.")
+        except ValueError as e:
+            raise InvalidArgumentError(f"Invalid user ID '{ctx.args[0]}'. Must be a number.") from e
 
         reason = " ".join(ctx.args[1:]) if len(ctx.args) > 1 else "No reason provided"
 
         # Try to unban via Discord API
         try:
             await ctx.guild.unban(
-                discord.Object(id=user_id),
-                reason=f"Unbanned by {ctx.author.name}: {reason}"
+                discord.Object(id=user_id), reason=f"Unbanned by {ctx.author.name}: {reason}"
             )
 
             # Log the unban
-            await ctx.db.create_moderation_action(
+            action = ModerationAction(
                 user_id=user_id,
                 action_type="unban",
-                reason=f"Unbanned by {ctx.author.name}: {reason}",
+                reason=reason,
+                is_automated=False,
                 moderator_id=ctx.author.id,
+                moderator_name=str(ctx.author),
             )
+            await ctx.db.create_moderation_action(action)
 
-            await ctx.reply_success(
-                f"Unbanned user `{user_id}`.\n"
-                f"**Reason:** {reason}"
-            )
+            await ctx.reply_success(f"Unbanned user `{user_id}`.\n" f"**Reason:** {reason}")
 
         except discord.NotFound:
             await ctx.reply_error(f"User `{user_id}` is not banned.")

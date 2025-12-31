@@ -3,7 +3,7 @@
 This module tests Pydantic model validation, properties, and helper methods.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from pydantic import ValidationError
@@ -131,7 +131,7 @@ class TestUser:
         user = User(
             user_id=123456789,
             username="testuser",
-            joined_at=datetime.now(timezone.utc),
+            joined_at=datetime.now(UTC),
         )
 
         assert user.user_id == 123456789
@@ -143,7 +143,7 @@ class TestUser:
 
     def test_create_user_full(self) -> None:
         """Test creating user with all fields."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         user = User(
             user_id=123456789,
             username="testuser",
@@ -176,7 +176,7 @@ class TestUser:
             User(
                 user_id=-1,
                 username="testuser",
-                joined_at=datetime.now(timezone.utc),
+                joined_at=datetime.now(UTC),
             )
 
         assert "user_id" in str(exc_info.value)
@@ -187,7 +187,7 @@ class TestUser:
             User(
                 user_id=0,
                 username="testuser",
-                joined_at=datetime.now(timezone.utc),
+                joined_at=datetime.now(UTC),
             )
 
         assert "user_id" in str(exc_info.value)
@@ -198,7 +198,7 @@ class TestUser:
             User(
                 user_id=123456789,
                 username="testuser",
-                joined_at=datetime.now(timezone.utc),
+                joined_at=datetime.now(UTC),
                 toxicity_avg=1.5,
             )
 
@@ -207,7 +207,7 @@ class TestUser:
         user = User(
             user_id=123456789,
             username="testuser",
-            joined_at=datetime.now(timezone.utc),
+            joined_at=datetime.now(UTC),
             warnings=2,
             timeouts=1,
             kicks=1,
@@ -222,7 +222,7 @@ class TestUser:
         new_user = User(
             user_id=123456789,
             username="newuser",
-            joined_at=datetime.now(timezone.utc) - timedelta(days=3),
+            joined_at=datetime.now(UTC) - timedelta(days=3),
         )
 
         assert new_user.is_new_account() is True
@@ -231,7 +231,7 @@ class TestUser:
         old_user = User(
             user_id=987654321,
             username="olduser",
-            joined_at=datetime.now(timezone.utc) - timedelta(days=30),
+            joined_at=datetime.now(UTC) - timedelta(days=30),
         )
 
         assert old_user.is_new_account() is False
@@ -241,7 +241,7 @@ class TestUser:
         user = User(
             user_id=123456789,
             username="testuser",
-            joined_at=datetime.now(timezone.utc) - timedelta(days=10),
+            joined_at=datetime.now(UTC) - timedelta(days=10),
         )
 
         assert user.is_new_account(7) is False
@@ -253,7 +253,7 @@ class TestUser:
             User(
                 user_id=123456789,
                 username="testuser",
-                joined_at=datetime.now(timezone.utc),
+                joined_at=datetime.now(UTC),
                 risk_level="purple",  # Invalid
             )
 
@@ -370,7 +370,7 @@ class TestModerationAction:
 
     def test_create_action_timeout_with_expiration(self) -> None:
         """Test creating a timeout action with expiration."""
-        expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+        expires_at = datetime.now(UTC) + timedelta(hours=1)
         action = ModerationAction(
             user_id=123456789,
             action_type="timeout",
@@ -469,7 +469,7 @@ class TestAppeal:
 
     def test_reviewed_appeal(self) -> None:
         """Test appeal with review information."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         appeal = Appeal(
             action_id=1,
             user_id=123456789,
@@ -532,7 +532,7 @@ class TestBrigadeEvent:
 
     def test_resolved_brigade_event(self) -> None:
         """Test brigade event with resolution."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         event = BrigadeEvent(
             participant_count=10,
             confidence_score=0.9,

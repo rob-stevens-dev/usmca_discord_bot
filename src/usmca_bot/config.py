@@ -4,9 +4,9 @@ This module handles all configuration via Pydantic settings with environment var
 support and validation. Configuration can be loaded from .env files or environment.
 """
 
-from typing import Annotated, Any, Literal
+from typing import Literal
 
-from pydantic import Field, PostgresDsn, RedisDsn, field_validator, ValidationInfo
+from pydantic import Field, PostgresDsn, RedisDsn, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -206,7 +206,7 @@ class Settings(BaseSettings):
         default=True,
         description="Whether to enable Prometheus metrics",
     )
-    
+
     # Admin Configuration
     bot_owner_id: int = Field(
         default=0,
@@ -219,10 +219,15 @@ class Settings(BaseSettings):
         alias="BOT_ADMIN_IDS",
     )
 
+    user_rate_limit_messages: int = Field(default=10)
+    user_rate_limit_window: int = Field(default=60)
+    global_rate_limit_messages: int = Field(default=1000)
+    global_rate_limit_window: int = Field(default=60)
+
     @property
     def allowed_channel_ids(self) -> list[int]:
         """Parse allowed channel IDs from string.
-        
+
         Returns:
             List of allowed channel IDs.
         """
@@ -232,11 +237,11 @@ class Settings(BaseSettings):
             return [int(x.strip()) for x in self.allowed_channel_ids_str.split(",") if x.strip()]
         except ValueError:
             return []
-    
+
     @property
     def blocked_channel_ids(self) -> list[int]:
         """Parse blocked channel IDs from string.
-        
+
         Returns:
             List of blocked channel IDs.
         """
@@ -250,7 +255,7 @@ class Settings(BaseSettings):
     @property
     def bot_admin_ids(self) -> list[int]:
         """Parse bot admin IDs from string.
-        
+
         Returns:
             List of admin user IDs.
         """
@@ -352,19 +357,19 @@ class Settings(BaseSettings):
                 f"toxicity_kick_threshold ({kick})"
             )
         return v
-        
+
     @field_validator("blocked_channel_ids_str")
     @classmethod
     def validate_channel_filtering(cls, v: str, info: ValidationInfo) -> str:
         """Ensure only one filtering method is used.
-        
+
         Args:
             v: Blocked channel IDs string.
             info: Validation info with other fields.
-            
+
         Returns:
             Validated blocked channel IDs string.
-            
+
         Raises:
             ValueError: If both allowlist and blocklist are set.
         """
@@ -395,21 +400,21 @@ class Settings(BaseSettings):
 
     def should_monitor_channel(self, channel_id: int) -> bool:
         """Check if a channel should be monitored.
-        
+
         Args:
             channel_id: Discord channel ID.
-            
+
         Returns:
             True if channel should be monitored, False otherwise.
         """
         # If allowlist is set, only monitor those channels
         if self.allowed_channel_ids:
             return channel_id in self.allowed_channel_ids
-        
-        if self.blocked_channel_ids:
-            return channel_id not in self.blocked_channel_ids        
 
-        # Default: monitor all channels        
+        if self.blocked_channel_ids:
+            return channel_id not in self.blocked_channel_ids
+
+        # Default: monitor all channels
         return True
 
     def get_threshold_for_action(
@@ -452,7 +457,7 @@ def get_settings() -> Settings:
     """
     global _settings
     if _settings is None:
-        _settings = Settings()
+        _settings = Settings()  # type: ignore[call-arg]
     return _settings
 
 
@@ -466,5 +471,5 @@ def reload_settings() -> Settings:
         This will replace the global settings instance.
     """
     global _settings
-    _settings = Settings()
+    _settings = Settings()  # type: ignore[call-arg]
     return _settings

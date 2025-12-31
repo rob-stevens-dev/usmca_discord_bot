@@ -4,13 +4,11 @@ This module provides common test fixtures and configuration for all tests.
 """
 
 import os
-from datetime import datetime, timezone
-from typing import AsyncGenerator, Generator
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 import pytest_asyncio
-from pydantic import PostgresDsn, RedisDsn
 
 from usmca_bot.config import Settings
 from usmca_bot.database.models import Message, ToxicityScores, User
@@ -73,7 +71,7 @@ def mock_discord_message() -> MagicMock:
     message.guild = MagicMock()
     message.guild.id = 777888999000111222
     message.content = "Test message content"
-    message.created_at = datetime.now(timezone.utc)
+    message.created_at = datetime.now(UTC)
     return message
 
 
@@ -89,7 +87,7 @@ def sample_user() -> User:
         username="testuser",
         discriminator="1234",
         display_name="Test User",
-        joined_at=datetime.now(timezone.utc),
+        joined_at=datetime.now(UTC),
         total_messages=10,
         toxicity_avg=0.15,
         warnings=0,
@@ -227,6 +225,7 @@ async def mock_classification_engine() -> AsyncMock:
 
     return engine
 
+
 @pytest.fixture
 def mock_discord_member() -> MagicMock:
     """Create a mock Discord member (guild-specific user)."""
@@ -239,12 +238,14 @@ def mock_discord_member() -> MagicMock:
     member.send = AsyncMock()
     return member
 
+
 @pytest.fixture
 def mock_discord_bot() -> MagicMock:
     """Create a mock Discord bot client."""
     bot = MagicMock()
     bot.get_guild = MagicMock()
     return bot
+
 
 # Markers for test categorization
 def pytest_configure(config: pytest.Config) -> None:
@@ -253,7 +254,9 @@ def pytest_configure(config: pytest.Config) -> None:
     Args:
         config: Pytest configuration object.
     """
-    config.addinivalue_line("markers", "slow: marks tests as slow (deselect with '-m \"not slow\"')")
+    config.addinivalue_line(
+        "markers", "slow: marks tests as slow (deselect with '-m \"not slow\"')"
+    )
     config.addinivalue_line("markers", "integration: marks tests as integration tests")
     config.addinivalue_line("markers", "unit: marks tests as unit tests")
     config.addinivalue_line("markers", "ml: marks tests that require ML models")

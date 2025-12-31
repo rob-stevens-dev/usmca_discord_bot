@@ -4,7 +4,7 @@ This module tests the Discord bot's event handling and message processing.
 """
 
 import asyncio  # ADD THIS IMPORT
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
@@ -31,12 +31,12 @@ class TestUSMCABot:
             USMCABot instance.
         """
         bot = USMCABot(test_settings)
-        
+
         # Mock database connections to avoid actual connections
         bot.db.connect = AsyncMock()
         bot.redis.connect = AsyncMock()
         bot.classification_engine.warmup = AsyncMock()
-        
+
         return bot
 
     @pytest.fixture
@@ -54,19 +54,19 @@ class TestUSMCABot:
         message.author = mock_discord_user
         message.author.bot = False
         message.content = "Test message content"
-        message.created_at = datetime.now(timezone.utc)
-        
+        message.created_at = datetime.now(UTC)
+
         # Mock guild
         message.guild = MagicMock(spec=discord.Guild)
         message.guild.id = 123456789012345678
-        
+
         # Mock channel
         message.channel = MagicMock()
         message.channel.id = 111222333444555666
-        
+
         # Mock delete method
         message.delete = AsyncMock()
-        
+
         return message
 
     @pytest.mark.asyncio
@@ -84,7 +84,7 @@ class TestUSMCABot:
         assert bot.brigade_detector is not None
         assert bot.decision_engine is not None
         assert bot.action_executor is not None
-        assert bot._ready is False
+        assert not bot._ready.is_set()
         assert bot._processing_messages == 0
 
     @pytest.mark.asyncio
@@ -110,13 +110,13 @@ class TestUSMCABot:
         # Just test that _ready gets set - don't try to mock complex discord.py properties
         # The bot.user, bot.guilds, and bot.latency are set by discord.py itself
         # We can't easily mock them without causing recursion issues
-        
-        assert bot._ready is False  # Initially false
-        
+
+        assert not bot._ready.is_set()  # Initially false
+
         # Manually set _ready as if on_ready was called
-        bot._ready = True
-        
-        assert bot._ready is True
+        bot._ready.set()
+
+        assert bot._ready.is_set()
 
     @pytest.mark.asyncio
     async def test_on_message_ignores_bot_messages(
@@ -138,9 +138,7 @@ class TestUSMCABot:
         bot._process_message.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_on_message_ignores_dms(
-        self, bot: USMCABot, mock_message: MagicMock
-    ) -> None:
+    async def test_on_message_ignores_dms(self, bot: USMCABot, mock_message: MagicMock) -> None:
         """Test bot ignores DM messages.
 
         Args:
@@ -304,9 +302,7 @@ class TestUSMCABot:
         bot.redis.check_global_rate_limit = AsyncMock(return_value=(True, 50))
         bot.redis.is_user_timed_out = AsyncMock(return_value=False)
         bot._get_or_create_user = AsyncMock(return_value=sample_user)
-        bot.classification_engine.classify_message = AsyncMock(
-            return_value=classification
-        )
+        bot.classification_engine.classify_message = AsyncMock(return_value=classification)
         bot.db.create_message = AsyncMock()
         bot._check_brigade_activity = AsyncMock()
 
@@ -384,17 +380,13 @@ class TestUSMCABot:
         bot.redis.check_global_rate_limit = AsyncMock(return_value=(True, 50))
         bot.redis.is_user_timed_out = AsyncMock(return_value=False)
         bot._get_or_create_user = AsyncMock(return_value=sample_user)
-        bot.classification_engine.classify_message = AsyncMock(
-            return_value=classification
-        )
+        bot.classification_engine.classify_message = AsyncMock(return_value=classification)
         bot.db.create_message = AsyncMock()
         bot._check_brigade_activity = AsyncMock()
         bot.behavior_analyzer.analyze_user = AsyncMock(return_value=behavior_score)
         bot.decision_engine.make_decision = AsyncMock(return_value=decision)
         bot.decision_engine.should_take_action = AsyncMock(return_value=True)
-        bot.decision_engine.get_action_message = AsyncMock(
-            return_value="You have been timed out"
-        )
+        bot.decision_engine.get_action_message = AsyncMock(return_value="You have been timed out")
         bot.action_executor.execute_action = AsyncMock(return_value=result)
 
         await bot._process_message(mock_message)
@@ -438,14 +430,14 @@ class TestUSMCABot:
         """
         # Mock database to return None (user doesn't exist)
         bot.db.get_user = AsyncMock(return_value=None)
-        
+
         # Mock create_user to return the created user
         created_user = User(
             user_id=mock_discord_user.id,
             username=mock_discord_user.name,
             discriminator=mock_discord_user.discriminator,
             display_name=mock_discord_user.display_name,
-            joined_at=datetime.now(timezone.utc),
+            joined_at=datetime.now(UTC),
         )
         bot.db.create_user = AsyncMock(return_value=created_user)
 
@@ -528,7 +520,7 @@ class TestUSMCABot:
         # Mock guild
         mock_discord_user.guild = MagicMock()
         mock_discord_user.guild.id = bot.settings.discord_guild_id
-        mock_discord_user.joined_at = datetime.now(timezone.utc)
+        mock_discord_user.joined_at = datetime.now(UTC)
 
         bot._get_or_create_user = AsyncMock()
         bot.brigade_detector.check_join_spike = AsyncMock(
@@ -597,17 +589,15 @@ class TestUSMCABot:
         Args:
             bot: USMCABot fixture.
         """
-        bot._ready = True
-        
+        bot._ready.set()
+
         # Mock health checks
         bot.db.health_check = AsyncMock(return_value=True)
         bot.redis.health_check = AsyncMock(return_value=True)
-        bot.classification_engine.health_check = AsyncMock(
-            return_value={"status": "healthy"}
-        )
-        
+        bot.classification_engine.health_check = AsyncMock(return_value={"status": "healthy"})
+
         # Mock latency as attribute
-        with patch.object(type(bot), 'latency', 0.05):
+        with patch.object(type(bot), "latency", 0.05):
             health = await bot.health_check()
 
         assert health["bot_ready"] is True
@@ -623,14 +613,12 @@ class TestUSMCABot:
         Args:
             bot: USMCABot fixture.
         """
-        bot._ready = True
+        bot._ready.set()
 
         # Mock unhealthy database
         bot.db.health_check = AsyncMock(return_value=False)
         bot.redis.health_check = AsyncMock(return_value=True)
-        bot.classification_engine.health_check = AsyncMock(
-            return_value={"status": "healthy"}
-        )
+        bot.classification_engine.health_check = AsyncMock(return_value={"status": "healthy"})
 
         health = await bot.health_check()
 
@@ -648,20 +636,22 @@ class TestUSMCABot:
         # Mock disconnect methods
         bot.db.disconnect = AsyncMock()
         bot.redis.disconnect = AsyncMock()
-        
+
         # Mock the parent close to avoid discord.py complexity
-        with patch('discord.Client.close', new_callable=AsyncMock):
+        with (
+            patch("discord.Client.close", new_callable=AsyncMock),
             # Mock cleanup_task.is_running() to return False (not running)
-            with patch.object(bot.cleanup_task, 'is_running', return_value=False):
-                # Start close in background and decrement processing counter
-                async def decrement_after_delay() -> None:
-                    await asyncio.sleep(0.1)
-                    bot._processing_messages = 0
+            patch.object(bot.cleanup_task, "is_running", return_value=False),
+        ):
+            # Start close in background and decrement processing counter
+            async def decrement_after_delay() -> None:
+                await asyncio.sleep(0.1)
+                bot._processing_messages = 0
 
-                asyncio.create_task(decrement_after_delay())
+            asyncio.create_task(decrement_after_delay())
 
-                # Close should wait for processing to complete
-                await bot.close()
+            # Close should wait for processing to complete
+            await bot.close()
 
-                bot.db.disconnect.assert_called_once()
-                bot.redis.disconnect.assert_called_once()
+            bot.db.disconnect.assert_called_once()
+            bot.redis.disconnect.assert_called_once()

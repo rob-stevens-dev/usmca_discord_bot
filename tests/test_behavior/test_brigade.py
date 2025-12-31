@@ -3,7 +3,7 @@
 This module tests brigade detection and coordinated attack identification.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
 import pytest
@@ -52,7 +52,7 @@ class TestBrigadeDetector:
 
         result = await detector.check_join_spike(
             user_id=123456,
-            join_timestamp=datetime.now(timezone.utc),
+            join_timestamp=datetime.now(UTC),
         )
 
         assert isinstance(result, BrigadeResult)
@@ -80,7 +80,7 @@ class TestBrigadeDetector:
 
         result = await detector.check_join_spike(
             user_id=123456,
-            join_timestamp=datetime.now(timezone.utc),
+            join_timestamp=datetime.now(UTC),
         )
 
         assert result.detected is True
@@ -104,9 +104,9 @@ class TestBrigadeDetector:
         mock_redis_client.track_similar_message = AsyncMock(return_value=1)
 
         result = await detector.check_message_similarity(
-            user_id=123456,
+            _user_id=123456,
             content="Test message",
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
         )
 
         assert result.detected is False
@@ -128,9 +128,9 @@ class TestBrigadeDetector:
         mock_redis_client.track_similar_message = AsyncMock(return_value=5)
 
         result = await detector.check_message_similarity(
-            user_id=123456,
+            _user_id=123456,
             content="Spam message repeated by many users",
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
         )
 
         assert result.detected is True
@@ -171,7 +171,7 @@ class TestBrigadeDetector:
             mock_redis_client: Mock Redis client.
         """
         user_ids = [123456, 123457, 123458, 123459, 123460]
-        
+
         # Mock Redis to show most users joined recently
         mock_redis_client.get_recent_joins = AsyncMock(
             return_value={123456, 123457, 123458, 123459}
@@ -200,7 +200,7 @@ class TestBrigadeDetector:
             mock_redis_client: Mock Redis client.
         """
         user_ids = [123456, 123457, 123458, 123459, 123460]
-        
+
         # Mock Redis to show only 1 user joined recently
         mock_redis_client.get_recent_joins = AsyncMock(return_value={123456})
 
@@ -269,7 +269,7 @@ class TestBrigadeDetector:
 
         results = await detector.comprehensive_check(
             user_id=123456,
-            join_timestamp=datetime.now(timezone.utc),
+            join_timestamp=datetime.now(UTC),
         )
 
         assert len(results) >= 1
@@ -292,7 +292,7 @@ class TestBrigadeDetector:
         results = await detector.comprehensive_check(
             user_id=123456,
             message_content="Test message",
-            message_timestamp=datetime.now(timezone.utc),
+            message_timestamp=datetime.now(UTC),
         )
 
         assert len(results) >= 1
@@ -315,9 +315,9 @@ class TestBrigadeDetector:
 
         results = await detector.comprehensive_check(
             user_id=123456,
-            join_timestamp=datetime.now(timezone.utc),
+            join_timestamp=datetime.now(UTC),
             message_content="Test message",
-            message_timestamp=datetime.now(timezone.utc),
+            message_timestamp=datetime.now(UTC),
         )
 
         assert len(results) == 2

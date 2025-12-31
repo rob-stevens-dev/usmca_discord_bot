@@ -30,9 +30,9 @@ def setup_logging(settings: Settings) -> None:
         "ERROR": 40,
         "CRITICAL": 50,
     }
-    
+
     log_level = log_level_map.get(settings.log_level.upper(), 20)  # Default to INFO
-    
+
     # Configure structlog
     structlog.configure(
         processors=[
@@ -40,9 +40,11 @@ def setup_logging(settings: Settings) -> None:
             structlog.processors.add_log_level,
             structlog.processors.TimeStamper(fmt="iso"),
             structlog.processors.StackInfoRenderer(),
-            structlog.dev.ConsoleRenderer()
-            if settings.environment == "development"
-            else structlog.processors.JSONRenderer(),
+            (
+                structlog.dev.ConsoleRenderer()
+                if settings.environment == "development"
+                else structlog.processors.JSONRenderer()
+            ),
         ],
         wrapper_class=structlog.make_filtering_bound_logger(log_level),
         context_class=dict,
@@ -85,7 +87,7 @@ async def run_bot_async() -> None:
     # Register signal handlers
     loop = asyncio.get_event_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
-        loop.add_signal_handler(sig, lambda s=sig: signal_handler(s))
+        loop.add_signal_handler(sig, lambda s=sig: signal_handler(s))  # type: ignore[misc]
 
     try:
         # Start bot

@@ -5,8 +5,9 @@ query execution, and high-level database operations.
 """
 
 import contextlib
+from collections.abc import AsyncIterator
 from datetime import datetime
-from typing import Any, AsyncIterator
+from typing import Any
 
 import psycopg
 from psycopg.rows import dict_row
@@ -18,7 +19,6 @@ from usmca_bot.database.models import (
     BrigadeEvent,
     Message,
     ModerationAction,
-    ToxicityScores,
     User,
 )
 
@@ -75,26 +75,25 @@ class PostgresClient:
     async def transaction(self) -> AsyncIterator[psycopg.AsyncConnection]:
         """Context manager for database transactions.
 
-        Yields:
-            Database connection with transaction.
+                Yields:
+                    Database connection with transaction.
 
-        Raises:
-            psycopg.Error: If transaction fails.
+                Raises:
+                    psycopg.Error: If transaction fails.
 
-        Example:
-```python
-async with client.transaction() as conn:
-            await conn.execute("INSERT INTO ...")
-            await conn.execute("UPDATE ...")
-        # Transaction commits automatically if no exception
-        
-"""
+                Example:
+        ```python
+        async with client.transaction() as conn:
+                    await conn.execute("INSERT INTO ...")
+                    await conn.execute("UPDATE ...")
+                # Transaction commits automatically if no exception
+
+        """
         if self.pool is None:
             raise RuntimeError("Database not connected. Call connect() first.")
 
-        async with self.pool.connection() as conn:
-            async with conn.transaction():
-                yield conn
+        async with self.pool.connection() as conn, conn.transaction():
+            yield conn
 
     async def execute(
         self, query: str, params: tuple[Any, ...] | None = None
@@ -114,30 +113,31 @@ async with client.transaction() as conn:
         if self.pool is None:
             raise RuntimeError("Database not connected. Call connect() first.")
 
-        async with self.pool.connection() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(query, params)
-                if cur.description is not None:
-                    return await cur.fetchall()
-                return []
+        async with self.pool.connection() as conn, conn.cursor() as cur:
+            await cur.execute(query, params)
+            columns = [desc[0] for desc in cur.description] if cur.description else []
+            rows = await cur.fetchall()
+            return [dict(zip(columns, row, strict=True)) for row in rows]
 
     async def execute_one(
-        self, query: str, params: tuple[Any, ...] | None = None
+        self, query: str, params: tuple[Any, ...] | dict[str, Any] | None = None
     ) -> dict[str, Any] | None:
         """Execute query and return single result.
 
         Args:
-            query: SQL query string.
-            params: Query parameters (optional).
-
-        Returns:
-            Single result row as dictionary, or None if no results.
-
-        Raises:
-            psycopg.Error: If query execution fails.
+            query: SQL query with %s or %(name)s placeholders.
+            params: Query parameters as tuple or dict.
         """
-        results = await self.execute(query, params)
-        return results[0] if results else None
+        if self.pool is None:
+            raise RuntimeError("Database not connected. Call connect() first.")
+
+        async with self.pool.connection() as conn, conn.cursor() as cur:
+            await cur.execute(query, params)
+            if cur.description:
+                columns = [desc[0] for desc in cur.description]
+                row = await cur.fetchone()
+                return dict(zip(columns, row, strict=True)) if row else None
+            return None
 
     # User Operations
 
@@ -193,9 +193,7 @@ async with client.transaction() as conn:
         result = await self.execute_one(query, (user_id,))
         return User.model_validate(result) if result else None
 
-    async def update_user_risk_level(
-        self, user_id: int, risk_level: str
-    ) -> None:
+    async def update_user_risk_level(self, user_id: int, risk_level: str) -> None:
         """Update user's risk level.
 
         Args:
@@ -206,8 +204,8 @@ async with client.transaction() as conn:
             psycopg.Error: If update fails.
         """
         query = """
-            UPDATE users 
-            SET risk_level = %s, updated_at = NOW() 
+            UPDATE users
+            SET risk_level = %s, updated_at = NOW()
             WHERE user_id = %s
         """
         await self.execute(query, (risk_level, user_id))
@@ -245,9 +243,7 @@ async with client.transaction() as conn:
         assert result is not None
         return Message.model_validate(result)
 
-    async def get_user_recent_messages(
-        self, user_id: int, limit: int = 50
-    ) -> list[Message]:
+    async def get_user_recent_messages(self, user_id: int, limit: int = 50) -> list[Message]:
         """Get user's recent messages.
 
         Args:
@@ -261,17 +257,15 @@ async with client.transaction() as conn:
             psycopg.Error: If query fails.
         """
         query = """
-            SELECT * FROM messages 
-            WHERE user_id = %s 
-            ORDER BY created_at DESC 
+            SELECT * FROM messages
+            WHERE user_id = %s
+            ORDER BY created_at DESC
             LIMIT %s
         """
         results = await self.execute(query, (user_id, limit))
         return [Message.model_validate(r) for r in results]
 
-    async def get_user_toxicity_trend(
-        self, user_id: int, hours: int = 24
-    ) -> float:
+    async def get_user_toxicity_trend(self, user_id: int, hours: int = 24) -> float:
         """Calculate user's toxicity trend over time window.
 
         Args:
@@ -296,9 +290,7 @@ async with client.transaction() as conn:
 
     # Moderation Action Operations
 
-    async def create_moderation_action(
-        self, action: ModerationAction
-    ) -> ModerationAction:
+    async def create_moderation_action(self, action: ModerationAction) -> ModerationAction:
         """Create a new moderation action record.
 
         Args:
@@ -323,7 +315,10 @@ async with client.transaction() as conn:
             )
             RETURNING *
         """
-        result = await self.execute_one(query, action.model_dump(exclude={"id", "action_uuid", "appealed", "appeal_id", "created_at"}))
+        result = await self.execute_one(
+            query,
+            action.model_dump(exclude={"id", "action_uuid", "appealed", "appeal_id", "created_at"}),
+        )
         assert result is not None
         return ModerationAction.model_validate(result)
 
@@ -416,9 +411,18 @@ async with client.transaction() as conn:
             RETURNING *
         """
         result = await self.execute_one(
-            query, appeal.model_dump(exclude={"id", "review_notes", "reviewed_by", 
-                                               "reviewed_by_name", "reviewed_at", 
-                                               "created_at", "updated_at"})
+            query,
+            appeal.model_dump(
+                exclude={
+                    "id",
+                    "review_notes",
+                    "reviewed_by",
+                    "reviewed_by_name",
+                    "reviewed_at",
+                    "created_at",
+                    "updated_at",
+                }
+            ),
         )
         assert result is not None
         return Appeal.model_validate(result)
@@ -468,9 +472,18 @@ async with client.transaction() as conn:
             RETURNING *
         """
         result = await self.execute_one(
-            query, event.model_dump(exclude={"id", "event_uuid", "detected_at", 
-                                              "is_resolved", "resolved_at", 
-                                              "resolution_notes", "created_at"})
+            query,
+            event.model_dump(
+                exclude={
+                    "id",
+                    "event_uuid",
+                    "detected_at",
+                    "is_resolved",
+                    "resolved_at",
+                    "resolution_notes",
+                    "created_at",
+                }
+            ),
         )
         assert result is not None
         return BrigadeEvent.model_validate(result)
@@ -525,3 +538,40 @@ async with client.transaction() as conn:
             return result is not None and result.get("health") == 1
         except Exception:
             return False
+
+    async def get_whitelisted_users(self) -> list[User]:
+        """Get all whitelisted users."""
+        query = "SELECT * FROM users WHERE is_whitelisted = TRUE"
+        results = await self.execute(query)
+        return [User(**row) for row in results]
+
+    async def set_user_whitelist(self, user_id: int, whitelisted: bool) -> None:
+        """Set user whitelist status."""
+        query = """
+            UPDATE users
+            SET is_whitelisted = %s, updated_at = NOW()
+            WHERE user_id = %s
+        """
+        await self.execute(query, (whitelisted, user_id))
+
+    async def clear_user_infractions(self, user_id: int) -> None:
+        """Clear all user infractions."""
+        query = """
+            UPDATE users
+            SET warnings = 0, timeouts = 0, kicks = 0, bans = 0, updated_at = NOW()
+            WHERE user_id = %s
+        """
+        await self.execute(query, (user_id,))
+
+    async def get_moderation_stats(self, since: datetime | None = None) -> dict[str, int]:
+        """Get moderation statistics."""
+        query = """
+            SELECT
+                action_type,
+                COUNT(*) as count
+            FROM moderation_actions
+            WHERE (%s IS NULL OR created_at >= %s)
+            GROUP BY action_type
+        """
+        results = await self.execute(query, (since, since))
+        return {row["action_type"]: row["count"] for row in results}

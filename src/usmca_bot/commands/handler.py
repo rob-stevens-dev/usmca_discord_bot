@@ -8,7 +8,6 @@ import discord
 import structlog
 
 from usmca_bot.commands.base import (
-    BaseCommand,
     CommandContext,
     CommandError,
     CommandRegistry,
@@ -119,9 +118,7 @@ class CommandHandler:
 
         # Must be in a guild
         if not message.guild:
-            await message.channel.send(
-                "❌ Commands can only be used in a server, not in DMs."
-            )
+            await message.channel.send("❌ Commands can only be used in a server, not in DMs.")
             return True
 
         # Parse command
@@ -185,9 +182,7 @@ class CommandHandler:
             )
 
         except Exception as e:
-            await ctx.reply_error(
-                "An unexpected error occurred. Please check logs."
-            )
+            await ctx.reply_error("An unexpected error occurred. Please check logs.")
             self._logger.error(
                 "command_unexpected_error",
                 user_id=message.author.id,
@@ -198,9 +193,7 @@ class CommandHandler:
 
         return True
 
-    def get_available_commands(
-        self, user_is_owner: bool, user_is_admin: bool
-    ) -> list[str]:
+    def get_available_commands(self, user_is_owner: bool, user_is_admin: bool) -> list[str]:
         """Get list of commands available to a user.
 
         Args:

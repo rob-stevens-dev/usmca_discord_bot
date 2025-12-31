@@ -5,7 +5,7 @@ including timeouts, kicks, bans, and user notifications.
 """
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import discord
@@ -13,7 +13,7 @@ import structlog
 
 from usmca_bot.actions.decision import ActionDecision
 from usmca_bot.config import Settings
-from usmca_bot.database.models import ModerationAction, User
+from usmca_bot.database.models import ModerationAction
 from usmca_bot.database.postgres import PostgresClient
 from usmca_bot.database.redis import RedisClient
 
@@ -105,28 +105,28 @@ class ActionExecutor:
     async def execute_action(
         self,
         decision: ActionDecision,
-        user: discord.User | discord.Member,  # ← Accept Discord types
+        user: discord.User | discord.Member,  # NOT database User model
         message: discord.Message | None = None,
         notification_message: str | None = None,
     ) -> ActionResult:
         """Execute a moderation action.
 
-        Args:
-            decision: Action decision to execute.
-            user: User to action.
-            message: Discord message that triggered action (optional).
-            notification_message: Custom notification message (optional).
+                Args:
+                    decision: Action decision to execute.
+                    user: User to action.
+                    message: Discord message that triggered action (optional).
+                    notification_message: Custom notification message (optional).
 
-        Returns:
-            ActionResult indicating execution status.
+                Returns:
+                    ActionResult indicating execution status.
 
-        Example:
-```python
-            executor = ActionExecutor(settings, db, redis, bot)
-            result = await executor.execute_action(decision, user, message)
-            if result.success:
-                print(f"Action executed: {result.action_type}")
-```
+                Example:
+        ```python
+                    executor = ActionExecutor(settings, db, redis, bot)
+                    result = await executor.execute_action(decision, user, message)
+                    if result.success:
+                        print(f"Action executed: {result.action_type}")
+        ```
         """
         import time
 
@@ -147,7 +147,7 @@ class ActionExecutor:
                 would_send_dm=True,
                 timeout_duration=decision.duration_seconds if decision.duration_seconds else None,
             )
-            
+
             # Return success without actually doing anything
             execution_time = (time.perf_counter() - start_time) * 1000
             return ActionResult(
@@ -156,7 +156,7 @@ class ActionExecutor:
                 user_id=user.id,
                 message_id=message.id if message else None,
                 notified_user=False,  # Didn't actually send
-                message_deleted=False,  # Didn't actually delete  
+                message_deleted=False,  # Didn't actually delete
                 recorded_in_db=False,  # Didn't actually record
                 execution_time_ms=execution_time,
                 details={
@@ -168,14 +168,14 @@ class ActionExecutor:
         self._logger.info(
             "executing_action",
             action_type=decision.action_type,
-            user_id=user.user_id,
+            user_id=user.id,
             message_id=message.id if message else None,
         )
 
         result = ActionResult(
             success=False,
             action_type=decision.action_type,
-            user_id=user.user_id,
+            user_id=user.id,
             message_id=message.id if message else None,
         )
 
@@ -185,9 +185,9 @@ class ActionExecutor:
             if guild is None:
                 raise RuntimeError(f"Guild {self.settings.discord_guild_id} not found")
 
-            member = guild.get_member(user.user_id)
+            member = guild.get_member(user.id)
             if member is None:
-                raise RuntimeError(f"Member {user.user_id} not found in guild")
+                raise RuntimeError(f"Member {user.id} not found in guild")
 
             # Execute the specific action
             if decision.action_type == "warning":
@@ -209,7 +209,7 @@ class ActionExecutor:
                     self._logger.info(
                         "message_deleted",
                         message_id=message.id,
-                        user_id=user.user_id,
+                        user_id=user.id,
                     )
                 except discord.Forbidden:
                     self._logger.warning(
@@ -224,7 +224,7 @@ class ActionExecutor:
                     )
 
             # Record action in database
-            await self._record_action(decision, user, message)
+            await self._record_action(decision, user.id, message)
             result.recorded_in_db = True
 
             # Mark as success
@@ -236,7 +236,7 @@ class ActionExecutor:
             self._logger.info(
                 "action_executed_successfully",
                 action_type=decision.action_type,
-                user_id=user.user_id,
+                user_id=user.id,
                 execution_time_ms=execution_time,
             )
 
@@ -245,7 +245,7 @@ class ActionExecutor:
             self._logger.error(
                 "action_execution_failed",
                 action_type=decision.action_type,
-                user_id=user.user_id,
+                user_id=user.id,
                 error=str(e),
             )
 
@@ -288,9 +288,7 @@ class ActionExecutor:
             raise ValueError("Timeout duration must be specified")
 
         # Calculate timeout expiration
-        expires_at = datetime.now(timezone.utc) + timedelta(
-            seconds=decision.duration_seconds
-        )
+        expires_at = datetime.now(UTC) + timedelta(seconds=decision.duration_seconds)
 
         # Apply timeout via Discord API
         await member.timeout(expires_at, reason=decision.reason)
@@ -356,9 +354,7 @@ class ActionExecutor:
 
         self._logger.info("member_banned", user_id=member.id)
 
-    async def _send_notification(
-        self, member: discord.Member, message: str
-    ) -> None:
+    async def _send_notification(self, member: discord.Member, message: str) -> None:
         """Send DM notification to user.
 
         Args:
@@ -384,26 +380,24 @@ class ActionExecutor:
     async def _record_action(
         self,
         decision: ActionDecision,
-        user: User,
+        user_id: int,  # Changed from User to int
         message: discord.Message | None,
     ) -> None:
         """Record action in database.
 
         Args:
             decision: Action decision.
-            user: User who was actioned.
+            user_id: ID of user who was actioned.
             message: Message that triggered action (optional).
         """
         # Calculate expiration for timeouts
         expires_at = None
         if decision.action_type == "timeout" and decision.duration_seconds:
-            expires_at = datetime.now(timezone.utc) + timedelta(
-                seconds=decision.duration_seconds
-            )
+            expires_at = datetime.now(UTC) + timedelta(seconds=decision.duration_seconds)
 
         # Create moderation action record
         action = ModerationAction(
-            user_id=user.user_id,
+            user_id=user_id,  # Use the int directly
             message_id=message.id if message else None,
             action_type=decision.action_type,  # type: ignore
             reason=decision.reason,
@@ -419,7 +413,7 @@ class ActionExecutor:
 
         self._logger.info(
             "action_recorded",
-            user_id=user.user_id,
+            user_id=user_id,
             action_type=decision.action_type,
         )
 

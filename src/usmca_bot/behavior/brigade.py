@@ -5,7 +5,7 @@ brigade-like behavior patterns.
 """
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from typing import Any
 
 import structlog
@@ -69,9 +69,7 @@ class BrigadeDetector:
         redis: Redis client for real-time tracking.
     """
 
-    def __init__(
-        self, settings: Settings, db: PostgresClient, redis: RedisClient
-    ) -> None:
+    def __init__(self, settings: Settings, db: PostgresClient, redis: RedisClient) -> None:
         """Initialize brigade detector.
 
         Args:
@@ -84,9 +82,7 @@ class BrigadeDetector:
         self.redis = redis
         self._logger = logger.bind(component="brigade_detector")
 
-    async def check_join_spike(
-        self, user_id: int, join_timestamp: datetime
-    ) -> BrigadeResult:
+    async def check_join_spike(self, user_id: int, join_timestamp: datetime) -> BrigadeResult:
         """Check for mass join events (join spike).
 
         Args:
@@ -106,7 +102,7 @@ class BrigadeDetector:
         if detected:
             # Get list of recent joiners
             recent_joins = await self.redis.get_recent_joins(minutes=1)
-            
+
             self._logger.warning(
                 "join_spike_detected",
                 join_count=join_count,
@@ -138,7 +134,7 @@ class BrigadeDetector:
             )
 
     async def check_message_similarity(
-        self, user_id: int, content: str, timestamp: datetime
+        self, _user_id: int, content: str, timestamp: datetime
     ) -> BrigadeResult:
         """Check for similar messages from multiple users.
 
@@ -151,9 +147,7 @@ class BrigadeDetector:
             BrigadeResult indicating detection status.
         """
         # Track similar message in Redis
-        similar_count = await self.redis.track_similar_message(
-            content, user_id, timestamp
-        )
+        similar_count = await self.redis.track_similar_message(content, timestamp)
 
         # Check if similar message count exceeds threshold
         threshold = self.settings.brigade_similar_messages
@@ -218,10 +212,8 @@ class BrigadeDetector:
             )
 
         # Check if these users joined recently
-        recent_joins = await self.redis.get_recent_joins(
-            minutes=time_window_seconds // 60
-        )
-        
+        recent_joins = await self.redis.get_recent_joins(minutes=time_window_seconds // 60)
+
         coordinated_users = set(user_ids) & recent_joins
         coordination_ratio = len(coordinated_users) / len(user_ids)
 
@@ -355,10 +347,10 @@ class BrigadeDetector:
         # Aggregate detections
         detected = any(r.detected for r in results)
         max_confidence = max((r.confidence for r in results), default=0.0)
-        
+
         # Get detection type with highest confidence
         detection_type = max(results, key=lambda r: r.confidence).detection_type
-        
+
         # Combine participants
         all_participants = set()
         for r in results:

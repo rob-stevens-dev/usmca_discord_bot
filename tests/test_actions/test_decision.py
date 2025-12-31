@@ -3,8 +3,7 @@
 This module tests Discord API action execution.
 """
 
-from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
@@ -27,11 +26,11 @@ class TestActionExecutor:
             Mock Discord bot client.
         """
         bot = MagicMock(spec=discord.Client)
-        
+
         # Mock guild
         guild = MagicMock(spec=discord.Guild)
         guild.id = 123456789012345678
-        
+
         # Mock member
         member = MagicMock(spec=discord.Member)
         member.id = 987654321098765432
@@ -39,10 +38,10 @@ class TestActionExecutor:
         member.timeout = AsyncMock()
         member.kick = AsyncMock()
         member.ban = AsyncMock()
-        
+
         guild.get_member = MagicMock(return_value=member)
         bot.get_guild = MagicMock(return_value=guild)
-        
+
         return bot
 
     @pytest.fixture
@@ -75,7 +74,7 @@ class TestActionExecutor:
     async def test_execute_action_warning_success(
         self,
         executor: ActionExecutor,
-        sample_user: User,
+        mock_discord_user: MagicMock,
         mock_discord_message: MagicMock,
     ) -> None:
         """Test successful warning execution.
@@ -94,9 +93,7 @@ class TestActionExecutor:
             final_score=0.4,
         )
 
-        result = await executor.execute_action(
-            decision, sample_user, mock_discord_message
-        )
+        result = await executor.execute_action(decision, mock_discord_user, mock_discord_message)
 
         assert isinstance(result, ActionResult)
         assert result.success is True
@@ -107,7 +104,7 @@ class TestActionExecutor:
     async def test_execute_action_timeout_success(
         self,
         executor: ActionExecutor,
-        sample_user: User,
+        mock_discord_user: MagicMock,
         mock_discord_message: MagicMock,
         mock_redis_client: AsyncMock,
     ) -> None:
@@ -129,13 +126,11 @@ class TestActionExecutor:
             duration_seconds=3600,
         )
 
-        result = await executor.execute_action(
-            decision, sample_user, mock_discord_message
-        )
+        result = await executor.execute_action(decision, mock_discord_user, mock_discord_message)
 
         assert result.success is True
         assert result.action_type == "timeout"
-        
+
         # Verify Redis was updated
         mock_redis_client.set_active_timeout.assert_called_once()
 
@@ -143,7 +138,7 @@ class TestActionExecutor:
     async def test_execute_action_kick_success(
         self,
         executor: ActionExecutor,
-        sample_user: User,
+        mock_discord_user: MagicMock,
         mock_discord_message: MagicMock,
     ) -> None:
         """Test successful kick execution.
@@ -162,9 +157,7 @@ class TestActionExecutor:
             final_score=0.8,
         )
 
-        result = await executor.execute_action(
-            decision, sample_user, mock_discord_message
-        )
+        result = await executor.execute_action(decision, mock_discord_user, mock_discord_message)
 
         assert result.success is True
         assert result.action_type == "kick"
@@ -173,7 +166,7 @@ class TestActionExecutor:
     async def test_execute_action_ban_success(
         self,
         executor: ActionExecutor,
-        sample_user: User,
+        mock_discord_user: MagicMock,
         mock_discord_message: MagicMock,
     ) -> None:
         """Test successful ban execution.
@@ -192,9 +185,7 @@ class TestActionExecutor:
             final_score=0.95,
         )
 
-        result = await executor.execute_action(
-            decision, sample_user, mock_discord_message
-        )
+        result = await executor.execute_action(decision, mock_discord_user, mock_discord_message)
 
         assert result.success is True
         assert result.action_type == "ban"
@@ -203,7 +194,7 @@ class TestActionExecutor:
     async def test_execute_action_deletes_message(
         self,
         executor: ActionExecutor,
-        sample_user: User,
+        mock_discord_user: MagicMock,
         mock_discord_message: MagicMock,
     ) -> None:
         """Test that message is deleted when requested.
@@ -225,9 +216,7 @@ class TestActionExecutor:
             should_delete_message=True,
         )
 
-        result = await executor.execute_action(
-            decision, sample_user, mock_discord_message
-        )
+        result = await executor.execute_action(decision, mock_discord_user, mock_discord_message)
 
         assert result.success is True
         assert result.message_deleted is True
@@ -237,7 +226,7 @@ class TestActionExecutor:
     async def test_execute_action_handles_guild_not_found(
         self,
         executor: ActionExecutor,
-        sample_user: User,
+        mock_discord_user: MagicMock,
         mock_discord_bot: MagicMock,
     ) -> None:
         """Test error handling when guild is not found.
@@ -259,7 +248,7 @@ class TestActionExecutor:
             final_score=0.4,
         )
 
-        result = await executor.execute_action(decision, sample_user)
+        result = await executor.execute_action(decision, mock_discord_user)
 
         assert result.success is False
         assert result.error is not None
@@ -269,7 +258,7 @@ class TestActionExecutor:
     async def test_execute_action_handles_member_not_found(
         self,
         executor: ActionExecutor,
-        sample_user: User,
+        mock_discord_user: MagicMock,
         mock_discord_bot: MagicMock,
     ) -> None:
         """Test error handling when member is not found.
@@ -292,7 +281,7 @@ class TestActionExecutor:
             final_score=0.4,
         )
 
-        result = await executor.execute_action(decision, sample_user)
+        result = await executor.execute_action(decision, mock_discord_user)
 
         assert result.success is False
         assert result.error is not None
@@ -374,20 +363,13 @@ class TestActionExecutor:
         assert result.success is False
         assert result.error is not None
 
-    @pytest.mark.asyncio
     async def test_record_action_creates_database_entry(
         self,
         executor: ActionExecutor,
         sample_user: User,
         mock_postgres_client: AsyncMock,
     ) -> None:
-        """Test that actions are recorded in database.
-
-        Args:
-            executor: ActionExecutor fixture.
-            sample_user: Sample user fixture.
-            mock_postgres_client: Mock PostgreSQL client.
-        """
+        """Test that actions are recorded in database."""
         decision = ActionDecision(
             action_type="warning",
             reason="Test",
@@ -397,20 +379,21 @@ class TestActionExecutor:
             final_score=0.4,
         )
 
-        await executor._record_action(decision, sample_user, None)
+        await executor._record_action(
+            decision, sample_user.user_id, None
+        )  # ← Changed from sample_user to sample_user.user_id
 
         mock_postgres_client.create_moderation_action.assert_called_once()
-        
-        # Verify the action details
+
         call_args = mock_postgres_client.create_moderation_action.call_args
         action = call_args[0][0]
-        
+
         assert action.user_id == sample_user.user_id
         assert action.action_type == "warning"
         assert action.reason == "Test"
         assert action.is_automated is True
-        
-        
+
+
 @pytest.mark.unit
 class TestDryRunMode:
     """Test suite for dry run mode."""
@@ -419,6 +402,7 @@ class TestDryRunMode:
     def dry_run_settings(self, test_settings: Settings) -> Settings:
         """Create settings with dry run enabled."""
         import copy
+
         settings = copy.copy(test_settings)
         settings.dry_run_mode = True
         return settings
@@ -452,19 +436,17 @@ class TestDryRunMode:
             confidence=0.8,
         )
 
-        result = await executor.execute_action(
-            decision, mock_discord_user, mock_discord_message
-        )
+        result = await executor.execute_action(decision, mock_discord_user, mock_discord_message)
 
         # Should report success
         assert result.success is True
         assert result.action_type == "warning"
-        
+
         # Should NOT have actually executed
         assert result.notified_user is False
         assert result.message_deleted is False
         assert result.recorded_in_db is False
-        
+
         # Should indicate dry run
         assert result.details is not None
         assert result.details["dry_run"] is True
@@ -504,14 +486,12 @@ class TestDryRunMode:
             duration_seconds=3600,
         )
 
-        result = await executor.execute_action(
-            decision, mock_discord_member, mock_discord_message
-        )
+        result = await executor.execute_action(decision, mock_discord_member, mock_discord_message)
 
         # Should report success but not actually execute
         assert result.success is True
         assert result.details["dry_run"] is True
-        
+
         # Should NOT have called timeout
         mock_discord_member.timeout.assert_not_called()
         mock_redis_client.set_active_timeout.assert_not_called()
@@ -529,7 +509,7 @@ class TestDryRunMode:
         """Test normal mode (dry_run=False) still executes actions."""
         # Ensure dry run is OFF
         assert test_settings.dry_run_mode is False
-        
+
         executor = ActionExecutor(
             test_settings,
             mock_postgres_client,
@@ -553,23 +533,21 @@ class TestDryRunMode:
         mock_member = MagicMock()
         mock_member.id = mock_discord_user.id
         mock_member.send = AsyncMock()  # ← This is what gets called
-        
+
         mock_discord_bot.get_guild = MagicMock(return_value=mock_guild)
         mock_guild.get_member = MagicMock(return_value=mock_member)
-        
+
         # Mock successful operations
         mock_discord_message.delete = AsyncMock()
         mock_postgres_client.create_moderation_action = AsyncMock()
 
-        result = await executor.execute_action(
-            decision, mock_discord_user, mock_discord_message
-        )
+        result = await executor.execute_action(decision, mock_discord_user, mock_discord_message)
 
         # Should actually execute in normal mode
         assert result.success is True
-        
+
         # Should NOT be dry run
-        assert result.details is None or result.details.get("dry_run") is not True        
+        assert result.details is None or result.details.get("dry_run") is not True
 
         # Should have called Discord API
         mock_member.send.assert_called_once()

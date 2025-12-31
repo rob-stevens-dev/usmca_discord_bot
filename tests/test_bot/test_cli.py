@@ -40,9 +40,7 @@ class TestCLI:
 
     @pytest.mark.asyncio
     @patch("usmca_bot.cli.USMCABot")
-    async def test_run_bot_async_starts_bot(
-        self, mock_bot_class: MagicMock, test_settings
-    ) -> None:
+    async def test_run_bot_async_starts_bot(self, mock_bot_class: MagicMock, test_settings) -> None:
         """Test run_bot_async starts the bot.
 
         Args:
@@ -62,10 +60,11 @@ class TestCLI:
             try:
                 # Use asyncio.wait_for with timeout to avoid hanging
                 import asyncio
+
                 from usmca_bot.cli import run_bot_async
 
                 await asyncio.wait_for(run_bot_async(), timeout=0.1)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 # Expected - bot runs indefinitely
                 pass
 

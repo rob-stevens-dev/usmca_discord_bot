@@ -5,7 +5,6 @@ toxicity scores, behavior analysis, and user history.
 """
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
 import structlog
@@ -109,81 +108,73 @@ class DecisionEngine:
         classification: ClassificationResult,
         behavior_score: BehaviorScore | None = None,
     ) -> ActionDecision:
-        """Make a moderation decision for a user's message.
-
-        Args:
-            user: User who sent the message.
-            classification: Classification results for the message.
-            behavior_score: Optional pre-computed behavior score.
-
-        Returns:
-            ActionDecision indicating what action to take.
-
-        Example:
-```python
-            engine = DecisionEngine(settings, db, behavior_analyzer)
-            decision = await engine.make_decision(user, classification)
-            print(f"Action: {decision.action_type}")
-```
-        """
+        """Make a moderation decision for a user's message."""
         self._logger.debug(
             "making_decision",
             user_id=user.user_id,
-            max_toxicity=classification.max_toxicity,
+            max_toxicity=classification.toxicity_scores.max_score,
         )
 
         # Get behavior score if not provided
         if behavior_score is None:
             behavior_score = await self.behavior_analyzer.analyze_user(user)
 
-        # Calculate aggregated score
-        final_score = await self._calculate_final_score(
-            user, classification, behavior_score
+        # Calculate context score FIRST (needed later)
+        context_score = await self.behavior_analyzer.get_context_score(
+            user, classification.toxicity_scores.max_score
         )
+
+        # Calculate aggregated score
+        toxicity_score = classification.toxicity_scores.max_score
+        behavior_final = behavior_score.final_score
+
+        # Weighted average: 60% toxicity, 40% behavior
+        base_score = (toxicity_score * 0.6) + (behavior_final * 0.4)
+
+        # Apply context multiplier (up to 20% increase)
+        final_score = min(1.0, base_score * (1.0 + context_score * 0.2))
 
         # Determine base action from thresholds
         base_action = self._determine_action_from_score(final_score)
 
-        # Check if we should escalate
-        should_escalate, escalation_reason = (
-            await self.behavior_analyzer.should_escalate_action(
-                user, classification.max_toxicity
-            )
+        # Check if we should escalate BEFORE using it
+        should_escalate, escalation_reason = await self.behavior_analyzer.should_escalate_action(
+            user, toxicity_score
         )
 
         # Apply escalation if needed
-        if should_escalate and base_action not in ["kick", "ban"]:
-            escalated_action = self._escalate_action(base_action)
-            reason = f"{escalation_reason}. {self._get_action_reason(classification)}"
-            action_type = escalated_action
+        escalated = False
+        if should_escalate and base_action != "none":
+            base_action = self._escalate_action(base_action)
             escalated = True
+
+        # Set action_type, handling "none" case
+        if base_action == "none":
+            action_type: Literal["warning", "timeout", "kick", "ban"] = "warning"
         else:
             action_type = base_action
-            reason = self._get_action_reason(classification)
-            escalated = False
+
+        # Get reason
+        reason = self._get_action_reason(classification)
 
         # Calculate duration for timeouts
         duration_seconds = None
         if action_type == "timeout":
-            timeout_count = await self.db.count_user_timeouts(user.user_id)
-            duration_seconds = self.settings.get_timeout_duration(timeout_count)
+            duration_seconds = self.settings.get_timeout_duration(user.timeouts)
 
         # Determine if message should be deleted
-        should_delete = self._should_delete_message(
-            classification.max_toxicity, action_type
-        )
+        should_delete = toxicity_score >= 0.7
 
-        # Calculate confidence based on score clarity
+        # Calculate confidence
         confidence = self._calculate_confidence(final_score, action_type)
 
+        # Create decision
         decision = ActionDecision(
             action_type=action_type,
             reason=reason,
-            toxicity_score=classification.max_toxicity,
-            behavior_score=behavior_score.final_score,
-            context_score=await self.behavior_analyzer.get_context_score(
-                user, classification.max_toxicity
-            ),
+            toxicity_score=toxicity_score,
+            behavior_score=behavior_final,
+            context_score=context_score,
             final_score=final_score,
             duration_seconds=duration_seconds,
             should_notify_user=True,
@@ -191,12 +182,8 @@ class DecisionEngine:
             escalated=escalated,
             confidence=confidence,
             details={
+                "should_escalate": should_escalate,
                 "risk_level": behavior_score.risk_level,
-                "velocity_multiplier": behavior_score.velocity_multiplier,
-                "escalation_multiplier": behavior_score.escalation_multiplier,
-                "history_multiplier": behavior_score.history_multiplier,
-                "new_account_multiplier": behavior_score.new_account_multiplier,
-                "total_infractions": user.total_infractions,
             },
         )
 
@@ -206,7 +193,6 @@ class DecisionEngine:
             action_type=action_type,
             final_score=final_score,
             escalated=escalated,
-            confidence=confidence,
         )
 
         return decision
@@ -330,9 +316,7 @@ class DecisionEngine:
 
         return "Automated moderation: " + ", ".join(reasons)
 
-    def _should_delete_message(
-        self, toxicity_score: float, action_type: str
-    ) -> bool:
+    def _should_delete_message(self, toxicity_score: float, action_type: str) -> bool:
         """Determine if message should be deleted.
 
         Args:
@@ -351,14 +335,9 @@ class DecisionEngine:
             return True
 
         # Delete for timeouts with moderate-high toxicity
-        if action_type == "timeout" and toxicity_score >= 0.6:
-            return True
+        return action_type == "timeout" and toxicity_score >= 0.6
 
-        return False
-
-    def _calculate_confidence(
-        self, final_score: float, action_type: str
-    ) -> float:
+    def _calculate_confidence(self, final_score: float, action_type: str) -> float:
         """Calculate confidence in the decision.
 
         Confidence is higher when score is clearly above/below thresholds.
@@ -400,9 +379,7 @@ class DecisionEngine:
 
         return confidence
 
-    async def should_take_action(
-        self, decision: ActionDecision, user: User
-    ) -> bool:
+    async def should_take_action(self, decision: ActionDecision, user: User) -> bool:
         """Determine if action should actually be executed.
 
         Provides final check before action execution.
@@ -452,9 +429,7 @@ class DecisionEngine:
 
         return True
 
-    async def get_action_message(
-        self, decision: ActionDecision, user: User
-    ) -> str:
+    async def get_action_message(self, decision: ActionDecision, _user: User) -> str:
         """Generate user-facing message explaining the action.
 
         Args:
