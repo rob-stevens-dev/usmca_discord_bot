@@ -1,0 +1,39 @@
+# Docker Compose Development Override
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+version: '3.8'
+
+services:
+  postgres:
+    ports:
+      - "5432:5432"  # Expose for local development tools
+    environment:
+      POSTGRES_PASSWORD: dev_password  # Override with dev password
+
+  redis:
+    ports:
+      - "6379:6379"  # Expose for local development tools
+
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder  # Use builder stage for dev (includes build tools)
+    volumes:
+      # Mount source code for live reload (requires auto-reload setup)
+      - ./src:/app/src:ro
+      - ./sql:/app/sql:ro
+    environment:
+      ENVIRONMENT: development
+      LOG_LEVEL: DEBUG
+      DRY_RUN_MODE: "true"  # Safe default for development
+      POSTGRES_PASSWORD: dev_password
+    # Remove resource limits for development
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 4G
+    # Enable interactive debugging
+    stdin_open: true
+    tty: true
