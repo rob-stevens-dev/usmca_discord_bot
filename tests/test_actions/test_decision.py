@@ -409,3 +409,189 @@ class TestActionExecutor:
         assert action.action_type == "warning"
         assert action.reason == "Test"
         assert action.is_automated is True
+        
+        
+@pytest.mark.unit
+class TestDryRunMode:
+    """Test suite for dry run mode."""
+
+    @pytest.fixture
+    def dry_run_settings(self, test_settings: Settings) -> Settings:
+        """Create settings with dry run enabled.
+        
+        Args:
+            test_settings: Base test settings.
+            
+        Returns:
+            Settings with dry_run_mode=True.
+        """
+        # Create new settings with dry run enabled
+        import copy
+        settings = copy.copy(test_settings)
+        settings.dry_run_mode = True
+        return settings
+
+    @pytest.mark.asyncio
+    async def test_dry_run_warning_logs_but_doesnt_execute(
+        self,
+        dry_run_settings: Settings,
+        mock_postgres_client: AsyncMock,
+        mock_redis_client: AsyncMock,
+        mock_discord_bot: MagicMock,
+        mock_discord_user: MagicMock,
+        mock_discord_message: MagicMock,
+    ) -> None:
+        """Test dry run mode logs warning but doesn't execute.
+        
+        Args:
+            dry_run_settings: Settings with dry run enabled.
+            mock_postgres_client: Mock PostgreSQL client.
+            mock_redis_client: Mock Redis client.
+            mock_discord_bot: Mock Discord bot.
+            mock_discord_user: Mock Discord user.
+            mock_discord_message: Mock Discord message.
+        """
+        executor = ActionExecutor(
+            dry_run_settings,
+            mock_postgres_client,
+            mock_redis_client,
+            mock_discord_bot,
+        )
+
+        decision = ActionDecision(
+            action_type="warning",
+            user_id=123456789,
+            reason="Test warning",
+            toxicity_score=0.4,
+            behavior_score=0.3,
+            confidence=0.8,
+        )
+
+        result = await executor.execute_action(
+            decision, mock_discord_user, mock_discord_message
+        )
+
+        # Should report success
+        assert result.success is True
+        assert result.action_type == "warning"
+        
+        # Should NOT have actually executed
+        assert result.notified_user is False
+        assert result.message_deleted is False
+        assert result.recorded_in_db is False
+        
+        # Should indicate dry run
+        assert result.details is not None
+        assert result.details["dry_run"] is True
+
+        # Should NOT have called Discord API or database
+        mock_discord_user.send.assert_not_called()
+        mock_discord_message.delete.assert_not_called()
+        mock_postgres_client.create_moderation_action.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_dry_run_timeout_logs_but_doesnt_execute(
+        self,
+        dry_run_settings: Settings,
+        mock_postgres_client: AsyncMock,
+        mock_redis_client: AsyncMock,
+        mock_discord_bot: MagicMock,
+        mock_discord_member: MagicMock,
+        mock_discord_message: MagicMock,
+    ) -> None:
+        """Test dry run mode logs timeout but doesn't execute.
+        
+        Args:
+            dry_run_settings: Settings with dry run enabled.
+            mock_postgres_client: Mock PostgreSQL client.
+            mock_redis_client: Mock Redis client.
+            mock_discord_bot: Mock Discord bot.
+            mock_discord_member: Mock Discord member.
+            mock_discord_message: Mock Discord message.
+        """
+        executor = ActionExecutor(
+            dry_run_settings,
+            mock_postgres_client,
+            mock_redis_client,
+            mock_discord_bot,
+        )
+
+        decision = ActionDecision(
+            action_type="timeout",
+            user_id=123456789,
+            reason="Test timeout",
+            toxicity_score=0.6,
+            behavior_score=0.5,
+            confidence=0.9,
+            timeout_duration=3600,
+        )
+
+        result = await executor.execute_action(
+            decision, mock_discord_member, mock_discord_message
+        )
+
+        # Should report success but not actually execute
+        assert result.success is True
+        assert result.details["dry_run"] is True
+        
+        # Should NOT have called timeout
+        mock_discord_member.timeout.assert_not_called()
+        mock_redis_client.set_active_timeout.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_normal_mode_still_executes(
+        self,
+        test_settings: Settings,  # Normal settings, dry_run=False
+        mock_postgres_client: AsyncMock,
+        mock_redis_client: AsyncMock,
+        mock_discord_bot: MagicMock,
+        mock_discord_user: MagicMock,
+        mock_discord_message: MagicMock,
+    ) -> None:
+        """Test normal mode (dry_run=False) still executes actions.
+        
+        Args:
+            test_settings: Normal test settings.
+            mock_postgres_client: Mock PostgreSQL client.
+            mock_redis_client: Mock Redis client.
+            mock_discord_bot: Mock Discord bot.
+            mock_discord_user: Mock Discord user.
+            mock_discord_message: Mock Discord message.
+        """
+        # Ensure dry run is OFF
+        assert test_settings.dry_run_mode is False
+        
+        executor = ActionExecutor(
+            test_settings,
+            mock_postgres_client,
+            mock_redis_client,
+            mock_discord_bot,
+        )
+
+        decision = ActionDecision(
+            action_type="warning",
+            user_id=123456789,
+            reason="Test warning",
+            toxicity_score=0.4,
+            behavior_score=0.3,
+            confidence=0.8,
+        )
+
+        # Mock successful execution
+        mock_discord_user.send.return_value = AsyncMock()
+        mock_discord_message.delete.return_value = AsyncMock()
+        mock_postgres_client.create_moderation_action.return_value = AsyncMock()
+
+        result = await executor.execute_action(
+            decision, mock_discord_user, mock_discord_message
+        )
+
+        # Should actually execute in normal mode
+        assert result.success is True
+        
+        # Should NOT be dry run
+        assert result.details is None or result.details.get("dry_run") is not True
+        
+        # Should have called Discord API
+        mock_discord_user.send.assert_called_once()
+        mock_discord_message.delete.assert_called_once()

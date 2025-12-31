@@ -91,6 +91,12 @@ class Settings(BaseSettings):
         le=500,
     )
 
+    # Operational Modes
+    dry_run_mode: bool = Field(
+        default=False,
+        description="If True, log actions but don't execute them (testing mode)",
+    )
+
     # Channel Filtering
     allowed_channel_ids: list[int] = Field(
         default_factory=list,
