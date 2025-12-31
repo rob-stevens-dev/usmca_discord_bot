@@ -3,8 +3,8 @@
 Tests all PostgresClient methods with proper async mocking.
 """
 
-from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -40,9 +40,7 @@ class TestPostgresClientInit:
         mock_pool.wait.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_disconnect_when_connected(
-        self, test_settings: Settings
-    ) -> None:
+    async def test_disconnect_when_connected(self, test_settings: Settings) -> None:
         """Test disconnect closes pool."""
         client = PostgresClient(test_settings)
         mock_pool = AsyncMock()
@@ -54,9 +52,7 @@ class TestPostgresClientInit:
         assert client.pool is None
 
     @pytest.mark.asyncio
-    async def test_disconnect_when_not_connected(
-        self, test_settings: Settings
-    ) -> None:
+    async def test_disconnect_when_not_connected(self, test_settings: Settings) -> None:
         """Test disconnect without connection."""
         client = PostgresClient(test_settings)
         await client.disconnect()
@@ -75,9 +71,7 @@ class TestPostgresClientQueries:
         return client
 
     @pytest.mark.asyncio
-    async def test_execute_without_connection(
-        self, test_settings: Settings
-    ) -> None:
+    async def test_execute_without_connection(self, test_settings: Settings) -> None:
         """Test execute raises error when not connected."""
         client = PostgresClient(test_settings)
 
@@ -85,16 +79,14 @@ class TestPostgresClientQueries:
             await client.execute("SELECT 1")
 
     @pytest.mark.asyncio
-    async def test_execute_with_results(
-        self, client_with_pool: PostgresClient
-    ) -> None:
+    async def test_execute_with_results(self, client_with_pool: PostgresClient) -> None:
         """Test execute returns query results."""
         # Mock at the execute level to avoid complex context manager mocking
         results = [
             {"id": 1, "name": "test1"},
             {"id": 2, "name": "test2"},
         ]
-        
+
         # Patch the execute method temporarily for this test
         original_execute = client_with_pool.execute
         client_with_pool.execute = AsyncMock(return_value=results)
@@ -103,7 +95,7 @@ class TestPostgresClientQueries:
 
         assert len(results) == 2
         assert results[0]["id"] == 1
-        
+
         # Restore
         client_with_pool.execute = original_execute
 
@@ -144,11 +136,9 @@ class TestPostgresClientUserOperations:
         return client
 
     @pytest.mark.asyncio
-    async def test_create_user(
-        self, client_with_pool: PostgresClient
-    ) -> None:
+    async def test_create_user(self, client_with_pool: PostgresClient) -> None:
         """Test creating a user."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         user = User(
             user_id=123456789,
             username="testuser",
@@ -166,14 +156,12 @@ class TestPostgresClientUserOperations:
         client_with_pool.execute_one.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_get_user_found(
-        self, client_with_pool: PostgresClient
-    ) -> None:
+    async def test_get_user_found(self, client_with_pool: PostgresClient) -> None:
         """Test getting an existing user."""
         user_data = {
             "user_id": 123456789,
             "username": "testuser",
-            "joined_at": datetime.now(timezone.utc),
+            "joined_at": datetime.now(UTC),
             "total_messages": 10,
             "toxicity_avg": 0.25,
             "risk_level": "green",
@@ -191,9 +179,7 @@ class TestPostgresClientUserOperations:
         client_with_pool.execute_one.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_get_user_not_found(
-        self, client_with_pool: PostgresClient
-    ) -> None:
+    async def test_get_user_not_found(self, client_with_pool: PostgresClient) -> None:
         """Test getting non-existent user returns None."""
         client_with_pool.execute_one = AsyncMock(return_value=None)
 
@@ -202,9 +188,7 @@ class TestPostgresClientUserOperations:
         assert user is None
 
     @pytest.mark.asyncio
-    async def test_update_user_risk_level(
-        self, client_with_pool: PostgresClient
-    ) -> None:
+    async def test_update_user_risk_level(self, client_with_pool: PostgresClient) -> None:
         """Test updating user risk level."""
         client_with_pool.execute = AsyncMock(return_value=[])
 
@@ -228,9 +212,7 @@ class TestPostgresClientMessageOperations:
         return client
 
     @pytest.mark.asyncio
-    async def test_create_message(
-        self, client_with_pool: PostgresClient
-    ) -> None:
+    async def test_create_message(self, client_with_pool: PostgresClient) -> None:
         """Test creating a message."""
         message = Message(
             message_id=987654321,
@@ -241,7 +223,7 @@ class TestPostgresClientMessageOperations:
             toxicity_score=0.25,
         )
 
-        message_data = {**message.model_dump(), "created_at": datetime.now(timezone.utc)}
+        message_data = {**message.model_dump(), "created_at": datetime.now(UTC)}
         client_with_pool.execute_one = AsyncMock(return_value=message_data)
 
         created = await client_with_pool.create_message(message)
@@ -251,9 +233,7 @@ class TestPostgresClientMessageOperations:
         client_with_pool.execute_one.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_get_user_recent_messages(
-        self, client_with_pool: PostgresClient
-    ) -> None:
+    async def test_get_user_recent_messages(self, client_with_pool: PostgresClient) -> None:
         """Test getting user's recent messages."""
         messages_data = [
             {
@@ -281,9 +261,7 @@ class TestPostgresClientMessageOperations:
         assert messages[0].message_id == 1
 
     @pytest.mark.asyncio
-    async def test_get_user_toxicity_trend(
-        self, client_with_pool: PostgresClient
-    ) -> None:
+    async def test_get_user_toxicity_trend(self, client_with_pool: PostgresClient) -> None:
         """Test calculating user toxicity trend."""
         client_with_pool.execute_one = AsyncMock(return_value={"avg_toxicity": 0.35})
 
@@ -305,9 +283,7 @@ class TestPostgresClientActionOperations:
         return client
 
     @pytest.mark.asyncio
-    async def test_create_moderation_action(
-        self, client_with_pool: PostgresClient
-    ) -> None:
+    async def test_create_moderation_action(self, client_with_pool: PostgresClient) -> None:
         """Test recording a moderation action."""
         action = ModerationAction(
             user_id=123456789,
@@ -319,7 +295,7 @@ class TestPostgresClientActionOperations:
         action_data = {
             **action.model_dump(),
             "action_id": 1,
-            "created_at": datetime.now(timezone.utc),
+            "created_at": datetime.now(UTC),
         }
         client_with_pool.execute_one = AsyncMock(return_value=action_data)
 

@@ -4,14 +4,13 @@ This module provides the ClassificationEngine which orchestrates toxicity detect
 sentiment analysis, and other content classification tasks.
 """
 
-import asyncio
 from typing import Any
 
 import structlog
 
 from usmca_bot.classification.toxicity import ToxicityDetector
 from usmca_bot.config import Settings
-from usmca_bot.database.models import Message, ToxicityScores
+from usmca_bot.database.models import ToxicityScores
 
 logger = structlog.get_logger()
 
@@ -94,23 +93,23 @@ class ClassificationEngine:
     async def classify_message(self, content: str) -> ClassificationResult:
         """Classify a single message.
 
-        Runs toxicity detection and sentiment analysis on the message content.
+                Runs toxicity detection and sentiment analysis on the message content.
 
-        Args:
-            content: Message text to classify.
+                Args:
+                    content: Message text to classify.
 
-        Returns:
-            ClassificationResult containing all analysis results.
+                Returns:
+                    ClassificationResult containing all analysis results.
 
-        Raises:
-            RuntimeError: If classification fails.
+                Raises:
+                    RuntimeError: If classification fails.
 
-        Example:
-```python
-            engine = ClassificationEngine(settings)
-            result = await engine.classify_message("Hello world!")
-            print(f"Toxicity: {result.max_toxicity:.2f}")
-```
+                Example:
+        ```python
+                    engine = ClassificationEngine(settings)
+                    result = await engine.classify_message("Hello world!")
+                    print(f"Toxicity: {result.max_toxicity:.2f}")
+        ```
         """
         import time
 
@@ -157,24 +156,24 @@ class ClassificationEngine:
     ) -> list[ClassificationResult]:
         """Classify multiple messages in batch.
 
-        More efficient than calling classify_message() multiple times.
+                More efficient than calling classify_message() multiple times.
 
-        Args:
-            messages: List of message texts to classify.
-            batch_size: Number of messages to process per batch.
+                Args:
+                    messages: List of message texts to classify.
+                    batch_size: Number of messages to process per batch.
 
-        Returns:
-            List of ClassificationResults, same order as input.
+                Returns:
+                    List of ClassificationResults, same order as input.
 
-        Raises:
-            RuntimeError: If classification fails.
+                Raises:
+                    RuntimeError: If classification fails.
 
-        Example:
-```python
-            engine = ClassificationEngine(settings)
-            messages = ["msg1", "msg2", "msg3"]
-            results = await engine.classify_messages_batch(messages)
-```
+                Example:
+        ```python
+                    engine = ClassificationEngine(settings)
+                    messages = ["msg1", "msg2", "msg3"]
+                    results = await engine.classify_messages_batch(messages)
+        ```
         """
         import time
 
@@ -216,9 +215,7 @@ class ClassificationEngine:
             )
             raise RuntimeError(f"Batch classification failed: {e}") from e
 
-    def should_flag_message(
-        self, result: ClassificationResult, threshold: float = 0.5
-    ) -> bool:
+    def should_flag_message(self, result: ClassificationResult, threshold: float = 0.5) -> bool:
         """Determine if message should be flagged for moderation.
 
         Args:

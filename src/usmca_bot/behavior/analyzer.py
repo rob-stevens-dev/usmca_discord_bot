@@ -5,13 +5,13 @@ and tracks escalation over time.
 """
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import structlog
 
 from usmca_bot.config import Settings
-from usmca_bot.database.models import Message, ModerationAction, User
+from usmca_bot.database.models import Message, User
 from usmca_bot.database.postgres import PostgresClient
 
 logger = structlog.get_logger()
@@ -131,7 +131,7 @@ class BehaviorAnalyzer:
             "message_count": len(recent_messages),
             "average_toxicity": user.toxicity_avg,
             "total_infractions": user.total_infractions,
-            "account_age_days": (datetime.now(timezone.utc) - user.joined_at).days,
+            "account_age_days": (datetime.now(UTC) - user.joined_at).days,
             "recent_escalation": escalation_mult > 1.0,
             "high_velocity": velocity_mult > 1.0,
         }
@@ -158,7 +158,7 @@ class BehaviorAnalyzer:
         return score
 
     async def _calculate_velocity_multiplier(
-        self, user: User, recent_messages: list[Message]
+        self, _user: User, recent_messages: list[Message]
     ) -> float:
         """Calculate message velocity multiplier.
 
@@ -197,7 +197,7 @@ class BehaviorAnalyzer:
             return 1.0
 
     async def _calculate_escalation_multiplier(
-        self, user: User, recent_messages: list[Message]
+        self, _user: User, recent_messages: list[Message]
     ) -> float:
         """Calculate toxicity escalation multiplier.
 
@@ -281,7 +281,7 @@ class BehaviorAnalyzer:
         Returns:
             New account multiplier (1.0-1.5).
         """
-        account_age = (datetime.now(timezone.utc) - user.joined_at).days
+        account_age = (datetime.now(UTC) - user.joined_at).days
 
         # New accounts (< 7 days) get stricter treatment
         if account_age < 1:
@@ -317,9 +317,7 @@ class BehaviorAnalyzer:
         else:
             return "red"
 
-    async def should_escalate_action(
-        self, user: User, current_toxicity: float
-    ) -> tuple[bool, str]:
+    async def should_escalate_action(self, user: User, current_toxicity: float) -> tuple[bool, str]:
         """Determine if action should be escalated based on user history.
 
         Args:
@@ -337,7 +335,7 @@ class BehaviorAnalyzer:
             a
             for a in recent_actions
             if a.action_type == "timeout"
-            and (datetime.now(timezone.utc) - a.created_at) < timedelta(hours=24)
+            and (datetime.now(UTC) - a.created_at) < timedelta(hours=24)
         ]
 
         if len(recent_timeouts) >= 2:
@@ -356,9 +354,7 @@ class BehaviorAnalyzer:
 
         return (False, "No escalation needed")
 
-    async def get_context_score(
-        self, user: User, message_toxicity: float
-    ) -> float:
+    async def get_context_score(self, user: User, _message_toxicity: float) -> float:
         """Calculate context score considering user history and current state.
 
         Args:
@@ -380,7 +376,7 @@ class BehaviorAnalyzer:
             context += min(0.3, user.total_infractions * 0.1)
 
         # Factor in new account status
-        account_age_days = (datetime.now(timezone.utc) - user.joined_at).days
+        account_age_days = (datetime.now(UTC) - user.joined_at).days
         if account_age_days < 7:
             context += 0.2
 
@@ -402,10 +398,10 @@ class BehaviorAnalyzer:
             user: User to update.
         """
         score = await self.analyze_user(user)
-        
+
         if score.risk_level != user.risk_level:
             await self.db.update_user_risk_level(user.user_id, score.risk_level)
-            
+
             self._logger.info(
                 "user_risk_updated",
                 user_id=user.user_id,

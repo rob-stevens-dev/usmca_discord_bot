@@ -5,11 +5,12 @@ all components: classification, behavior analysis, and action execution.
 """
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import discord
 import structlog
+from discord import Member
 from discord.ext import tasks
 
 from usmca_bot.actions.decision import DecisionEngine
@@ -18,7 +19,8 @@ from usmca_bot.behavior.analyzer import BehaviorAnalyzer
 from usmca_bot.behavior.brigade import BrigadeDetector
 from usmca_bot.classification.engine import ClassificationEngine
 from usmca_bot.config import Settings
-from usmca_bot.database.models import Message, User
+from usmca_bot.database.models import Message
+from usmca_bot.database.models import User as DBUser
 from usmca_bot.database.postgres import PostgresClient
 from usmca_bot.database.redis import RedisClient
 
@@ -67,13 +69,11 @@ class USMCABot(discord.Client):
         self.classification_engine = ClassificationEngine(settings)
         self.behavior_analyzer = BehaviorAnalyzer(settings, self.db)
         self.brigade_detector = BrigadeDetector(settings, self.db, self.redis)
-        self.decision_engine = DecisionEngine(
-            settings, self.db, self.behavior_analyzer
-        )
+        self.decision_engine = DecisionEngine(settings, self.db, self.behavior_analyzer)
         self.action_executor = ActionExecutor(settings, self.db, self.redis, self)
 
-        # Track readiness
-        self._ready = False
+        # Track readiness and in-flight message processing
+        self._ready: asyncio.Event = asyncio.Event()
         self._processing_messages = 0
 
     async def setup_hook(self) -> None:
@@ -110,7 +110,7 @@ class USMCABot(discord.Client):
 
         Called when the bot has successfully connected to Discord.
         """
-        self._ready = True
+        self._ready.set()
         self._logger.info(
             "bot_ready",
             bot_user=str(self.user),
@@ -136,16 +136,12 @@ class USMCABot(discord.Client):
         if message.guild.id != self.settings.discord_guild_id:
             return
 
-        # Only process messages in configured guild
-        if message.guild.id != self.settings.discord_guild_id:
-            return
-        
         # Check if channel should be monitored
         if not self.settings.should_monitor_channel(message.channel.id):
             self._logger.debug(
                 "channel_skipped",
                 channel_id=message.channel.id,
-                channel_name=getattr(message.channel, 'name', 'unknown'),
+                channel_name=getattr(message.channel, "name", "unknown"),
             )
             return
 
@@ -170,38 +166,33 @@ class USMCABot(discord.Client):
         Args:
             message: Discord message to process.
         """
-        self._logger.debug(
-            "processing_message",
-            message_id=message.id,
-            user_id=message.author.id,
-            content_length=len(message.content),
-        )
-
-        # Check for duplicate processing
-        is_duplicate = await self.redis.is_duplicate_message(message.id)
+        # Check for duplicate (Redis)
+        is_duplicate = await self.redis.is_duplicate_message(message.id, ttl_seconds=300)
         if is_duplicate:
-            self._logger.debug(
-                "duplicate_message_skipped",
-                message_id=message.id,
-            )
+            self._logger.debug("duplicate_message", message_id=message.id)
             return
 
-        # Rate limiting
-        is_allowed, current_count = await self.redis.check_user_rate_limit(
-            message.author.id
+        # Check rate limits
+        user_allowed, user_count = await self.redis.check_user_rate_limit(
+            message.author.id,
+            max_messages=self.settings.user_rate_limit_messages,
+            window_seconds=self.settings.user_rate_limit_window,
         )
-        if not is_allowed:
+
+        if not user_allowed:
             self._logger.warning(
                 "user_rate_limited",
                 user_id=message.author.id,
-                message_count=current_count,
+                message_count=user_count,
             )
-            # Could send warning to user here
             return
 
-        # Global rate limiting
-        is_allowed_global, global_count = await self.redis.check_global_rate_limit()
-        if not is_allowed_global:
+        global_allowed, global_count = await self.redis.check_global_rate_limit(
+            max_messages=self.settings.global_rate_limit_messages,
+            window_seconds=self.settings.global_rate_limit_window,
+        )
+
+        if not global_allowed:
             self._logger.warning(
                 "global_rate_limited",
                 message_count=global_count,
@@ -214,56 +205,47 @@ class USMCABot(discord.Client):
         # Check if user is currently timed out
         is_timed_out = await self.redis.is_user_timed_out(user.user_id)
         if is_timed_out:
-            # User is timed out, delete message if they somehow sent one
-            try:
-                await message.delete()
-                self._logger.info(
-                    "message_deleted_timeout",
-                    user_id=user.user_id,
-                    message_id=message.id,
-                )
-            except discord.Forbidden:
-                pass
+            self._logger.debug("user_timed_out", user_id=user.user_id)
+            # Still process message for logging, but don't take new action
             return
 
-        # Skip if user is whitelisted
+        # Skip whitelisted users (after logging)
         if user.is_whitelisted:
-            self._logger.debug(
-                "user_whitelisted",
-                user_id=user.user_id,
-            )
+            self._logger.debug("user_whitelisted", user_id=user.user_id)
             return
 
-        # Classify message
-        classification = await self.classification_engine.classify_message(
-            message.content
-        )
+        # Classify message toxicity
+        classification = await self.classification_engine.classify_message(message.content)
 
         self._logger.info(
             "message_classified",
             message_id=message.id,
             user_id=user.user_id,
-            max_toxicity=classification.max_toxicity,
+            max_toxicity=classification.toxicity_scores.max_score,
             processing_time_ms=classification.processing_time_ms,
         )
 
         # Store message in database
+        if message.guild is None:
+            return  # Skip DMs
+
+        guild_id = message.guild.id
+
         db_message = Message.from_toxicity_scores(
             message_id=message.id,
             user_id=user.user_id,
             channel_id=message.channel.id,
-            guild_id=message.guild.id,
+            guild_id=guild_id,
             content=message.content,
             scores=classification.toxicity_scores,
-            sentiment_score=classification.sentiment_score,
         )
         await self.db.create_message(db_message)
 
         # Check for brigade activity
         await self._check_brigade_activity(user, message)
 
-        # Only proceed with moderation if toxicity is notable
-        if classification.max_toxicity < self.settings.toxicity_warning_threshold:
+        # If toxicity is below warning threshold, no action needed
+        if classification.toxicity_scores.max_score < self.settings.toxicity_warning_threshold:
             return
 
         # Analyze user behavior
@@ -272,14 +254,12 @@ class USMCABot(discord.Client):
         self._logger.info(
             "behavior_analyzed",
             user_id=user.user_id,
-            behavior_score=behavior_score.final_score,
+            final_score=behavior_score.final_score,
             risk_level=behavior_score.risk_level,
         )
 
         # Make moderation decision
-        decision = await self.decision_engine.make_decision(
-            user, classification, behavior_score
-        )
+        decision = await self.decision_engine.make_decision(user, classification, behavior_score)
 
         self._logger.info(
             "decision_made",
@@ -303,7 +283,7 @@ class USMCABot(discord.Client):
         # Execute action
         notification = await self.decision_engine.get_action_message(decision, user)
         result = await self.action_executor.execute_action(
-            decision, user, message, notification
+            decision, message.author, message, notification
         )
 
         if result.success:
@@ -323,28 +303,28 @@ class USMCABot(discord.Client):
                 error=result.error,
             )
 
-    async def _get_or_create_user(self, discord_user: discord.Member) -> User:
+    async def _get_or_create_user(self, member: discord.User | Member) -> DBUser:
         """Get user from database or create if doesn't exist.
 
         Args:
-            discord_user: Discord member object.
+            member: Discord user or member object.
 
         Returns:
             User database model.
         """
         # Try to get existing user
-        user = await self.db.get_user(discord_user.id)
+        user = await self.db.get_user(member.id)
 
         if user is not None:
             return user
 
         # Create new user
-        new_user = User(
-            user_id=discord_user.id,
-            username=discord_user.name,
-            discriminator=discord_user.discriminator,
-            display_name=discord_user.display_name,
-            joined_at=discord_user.joined_at or datetime.now(timezone.utc),
+        new_user = DBUser(
+            user_id=member.id,
+            username=member.name,
+            discriminator=member.discriminator,
+            display_name=member.display_name,
+            joined_at=getattr(member, "joined_at", None) or datetime.now(UTC),
         )
 
         created_user = await self.db.create_user(new_user)
@@ -357,63 +337,51 @@ class USMCABot(discord.Client):
 
         return created_user
 
-    async def _check_brigade_activity(
-        self, user: User, message: discord.Message
-    ) -> None:
+    async def _check_brigade_activity(self, user: DBUser, message: discord.Message) -> None:
         """Check for brigade activity.
 
         Args:
             user: User who sent the message.
             message: Discord message object.
         """
-        # Run comprehensive brigade check
+        # Run all brigade checks
         results = await self.brigade_detector.comprehensive_check(
             user_id=user.user_id,
             message_content=message.content,
             message_timestamp=message.created_at,
         )
 
-        if not results:
-            return
-
         # Aggregate results
-        aggregated = self.brigade_detector.aggregate_results(results)
+        brigade_result = self.brigade_detector.aggregate_results(results)
 
-        if aggregated.detected:
+        if brigade_result.detected:
             self._logger.warning(
                 "brigade_detected",
-                detection_type=aggregated.detection_type,
-                confidence=aggregated.confidence,
-                participant_count=aggregated.participant_count,
+                detection_type=brigade_result.detection_type,
+                confidence=brigade_result.confidence,
+                participant_count=brigade_result.participant_count,
             )
 
             # Record brigade event
-            await self.brigade_detector.record_brigade_event(aggregated)
+            await self.brigade_detector.record_brigade_event(brigade_result)
 
-            # Could trigger additional actions here (alert mods, lockdown, etc.)
-
-    async def on_member_join(self, member: discord.Member) -> None:
+    async def on_member_join(self, member: Member) -> None:
         """Handle member join event.
 
         Args:
             member: Discord member who joined.
         """
-        # Only process joins in configured guild
+        # Only track joins in configured guild
         if member.guild.id != self.settings.discord_guild_id:
             return
 
-        self._logger.info(
-            "member_joined",
-            user_id=member.id,
-            username=member.name,
-        )
+        # Get or create user
+        user = await self._get_or_create_user(member)
 
-        # Create user record
-        await self._get_or_create_user(member)
-
-        # Check for join spike (brigade)
+        # Check for join spike brigade pattern
         result = await self.brigade_detector.check_join_spike(
-            member.id, member.joined_at or datetime.now(timezone.utc)
+            user_id=user.user_id,
+            join_timestamp=member.joined_at or datetime.now(UTC),
         )
 
         if result.detected:
@@ -422,29 +390,22 @@ class USMCABot(discord.Client):
                 confidence=result.confidence,
                 participant_count=result.participant_count,
             )
-
-            # Record brigade event
             await self.brigade_detector.record_brigade_event(result)
 
-    async def on_member_remove(self, member: discord.Member) -> None:
-        """Handle member removal event.
+    async def on_member_remove(self, member: Member) -> None:
+        """Handle member leave/remove event.
 
         Args:
-            member: Discord member who left/was removed.
+            member: Discord member who left.
         """
-        # Only process removals in configured guild
-        if member.guild.id != self.settings.discord_guild_id:
-            return
-
+        # Log member removal
         self._logger.info(
             "member_removed",
             user_id=member.id,
-            username=member.name,
+            username=str(member),
         )
 
-    async def on_message_edit(
-        self, before: discord.Message, after: discord.Message
-    ) -> None:
+    async def on_message_edit(self, before: discord.Message, after: discord.Message) -> None:
         """Handle message edit event.
 
         Args:
@@ -455,42 +416,26 @@ class USMCABot(discord.Client):
         if after.author.bot:
             return
 
-        # Only process edits in configured guild
-        if not after.guild or after.guild.id != self.settings.discord_guild_id:
-            return
-
-        # If content didn't change, ignore
+        # Only reprocess if content actually changed
         if before.content == after.content:
             return
 
-        self._logger.debug(
-            "message_edited",
-            message_id=after.id,
-            user_id=after.author.id,
-        )
-
-        # Treat edited message as a new message
-        # (Users shouldn't be able to evade moderation by editing)
+        # Reprocess the edited message
         await self._process_message(after)
 
     async def on_message_delete(self, message: discord.Message) -> None:
-        """Handle message deletion event.
+        """Handle message delete event.
 
         Args:
             message: Deleted message.
         """
-        # Only track deletions in configured guild
-        if not message.guild or message.guild.id != self.settings.discord_guild_id:
-            return
-
+        # Mark message as deleted in database
+        # (This is a simple implementation - you might want more sophisticated tracking)
         self._logger.debug(
             "message_deleted",
             message_id=message.id,
             user_id=message.author.id,
         )
-
-        # Could update database to mark message as deleted
-        # (Implementation depends on whether you want this tracked)
 
     async def on_error(self, event: str, *args: Any, **kwargs: Any) -> None:
         """Handle Discord client errors.
@@ -501,7 +446,7 @@ class USMCABot(discord.Client):
             kwargs: Keyword arguments.
         """
         self._logger.error(
-            "discord_error",
+            "discord_event_error",
             event=event,
             args=args,
             kwargs=kwargs,
@@ -509,85 +454,78 @@ class USMCABot(discord.Client):
 
     @tasks.loop(hours=1)
     async def cleanup_task(self) -> None:
-        """Background task for cleanup operations.
+        """Background task to clean up expired data.
 
-        Runs every hour to clean up expired data.
+        Runs hourly to remove old brigade detection data from Redis.
         """
         try:
-            self._logger.debug("cleanup_task_running")
-
-            # Clean up Redis expired data
             await self.redis.cleanup_expired_data()
-
-            self._logger.debug("cleanup_task_complete")
-
+            self._logger.info("cleanup_task_completed")
         except Exception as e:
-            self._logger.error("cleanup_task_error", error=str(e))
+            self._logger.error("cleanup_task_failed", error=str(e))
 
     @cleanup_task.before_loop
     async def before_cleanup_task(self) -> None:
-        """Wait until bot is ready before starting cleanup task."""
-        await self.wait_until_ready()
+        """Wait for bot to be ready before starting cleanup task."""
+        await self._ready.wait()
+
+    async def health_check(self) -> dict[str, Any]:
+        """Check health of all bot components.
+
+        Returns:
+            Dictionary with health status of each component.
+        """
+        health = {
+            "bot_ready": self._ready.is_set(),
+            "postgres": await self.db.health_check(),
+            "redis": await self.redis.health_check(),
+            "classification_engine": (await self.classification_engine.health_check()).get("status")
+            == "healthy",
+            "latency_ms": self.latency * 1000,
+            "processing_messages": self._processing_messages,
+        }
+
+        return health
 
     async def close(self) -> None:
-        """Close bot and cleanup resources."""
-        self._logger.info("bot_shutting_down")
+        """Close bot and cleanup resources gracefully.
 
-        # Cancel background tasks
-        if self.cleanup_task.is_running():
-            self.cleanup_task.cancel()
+        Waits for in-flight message processing to complete before closing.
+        """
+        self._logger.info("bot_closing")
 
-        # Wait for in-flight message processing
-        max_wait = 10  # seconds
-        waited = 0
-        while self._processing_messages > 0 and waited < max_wait:
+        # Wait for in-flight messages to finish processing
+        waited: float = 0.0
+        while self._processing_messages > 0 and waited < 30:
             self._logger.info(
-                "waiting_for_message_processing",
-                remaining=self._processing_messages,
+                "waiting_for_messages",
+                processing=self._processing_messages,
             )
             await asyncio.sleep(0.5)
             waited += 0.5
 
-        # Disconnect from databases
+        if self._processing_messages > 0:
+            self._logger.warning(
+                "force_closing_with_pending_messages",
+                processing=self._processing_messages,
+            )
+
+        # Stop background tasks
+        if self.cleanup_task.is_running():
+            self.cleanup_task.cancel()
+
+        # Close database connections
         await self.db.disconnect()
+        self._logger.info("postgres_disconnected")
+
         await self.redis.disconnect()
+        self._logger.info("redis_disconnected")
 
-        self._logger.info("bot_shutdown_complete")
+        # Close classification engine
+        self.classification_engine.cleanup()
+        self._logger.info("classification_engine_cleaned")
 
-        # Call parent close
+        # Close Discord connection
         await super().close()
 
-    async def health_check(self) -> dict[str, Any]:
-        """Perform health check on all components.
-
-        Returns:
-            Dictionary with health status of all components.
-        """
-        health = {
-            "bot_ready": self._ready,
-            "processing_messages": self._processing_messages,
-            "latency_ms": self.latency * 1000 if self._ready else None,
-        }
-
-        try:
-            # Check database connectivity
-            health["postgres"] = await self.db.health_check()
-            health["redis"] = await self.redis.health_check()
-
-            # Check classification engine
-            engine_health = await self.classification_engine.health_check()
-            health["classification_engine"] = engine_health.get("status") == "healthy"
-
-        except Exception as e:
-            self._logger.error("health_check_error", error=str(e))
-            health["error"] = str(e)
-
-        return health
-
-    def run_bot(self) -> None:
-        """Run the bot with token from settings.
-
-        This is a convenience method that calls discord.Client.run().
-        """
-        self._logger.info("starting_bot")
-        self.run(self.settings.discord_token)
+        self._logger.info("bot_closed")

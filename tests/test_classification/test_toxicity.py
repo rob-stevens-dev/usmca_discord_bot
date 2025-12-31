@@ -3,7 +3,7 @@
 This module tests the Detoxify-based toxicity classification.
 """
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -301,9 +301,7 @@ class TestToxicityDetector:
         assert "Batch toxicity prediction failed" in str(exc_info.value)
 
     @patch("usmca_bot.classification.toxicity.Detoxify")
-    def test_unload_model(
-        self, mock_detoxify: MagicMock, detector: ToxicityDetector
-    ) -> None:
+    def test_unload_model(self, mock_detoxify: MagicMock, detector: ToxicityDetector) -> None:
         """Test unload_model frees resources.
 
         Args:
@@ -365,14 +363,12 @@ class TestGetToxicityDetector:
     """Test suite for get_toxicity_detector helper function."""
 
     @pytest.mark.skip(reason="Settings is not hashable, cannot be used with lru_cache in tests")
-    def test_get_detector_returns_detector(
-        self, test_settings: Settings
-    ) -> None:
+    def test_get_detector_returns_detector(self, test_settings: Settings) -> None:
         """Test function returns detector instance.
 
         Args:
             test_settings: Test settings fixture.
-        
+
         Note:
             This test is skipped because Settings (Pydantic BaseSettings) is not hashable
             and cannot be used with lru_cache. In production, this works fine because

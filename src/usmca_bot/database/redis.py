@@ -6,7 +6,7 @@ message deduplication, and caching.
 
 import hashlib
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import redis.asyncio as redis
@@ -32,7 +32,7 @@ class RedisClient:
             settings: Application settings.
         """
         self.settings = settings
-        self.client: redis.Redis | None = None
+        self.client: redis.Redis[bytes] | None = None
 
     async def connect(self) -> None:
         """Establish connection to Redis.
@@ -45,7 +45,7 @@ class RedisClient:
         self.client = redis.from_url(
             str(self.settings.redis_url),
             max_connections=self.settings.redis_max_connections,
-            decode_responses=True,
+            decode_responses=False,  # Changed to False to work with bytes
         )
         # Test connection
         await self.client.ping()
@@ -56,7 +56,7 @@ class RedisClient:
         Closes the connection pool and cleans up resources.
         """
         if self.client is not None:
-            await self.client.aclose()
+            await self.client.close()  # Changed from aclose()
             self.client = None
 
     # Rate Limiting
@@ -83,38 +83,38 @@ class RedisClient:
         if self.client is None:
             raise RuntimeError("Redis not connected. Call connect() first.")
 
-        key = f"rate:user:{user_id}:messages"
-        now = datetime.now(timezone.utc).timestamp()
+        key = f"ratelimit:user:{user_id}"
+        now = datetime.now(UTC).timestamp()
         window_start = now - window_seconds
 
         # Use pipeline for atomic operations
         pipe = self.client.pipeline()
-        
-        # Remove old entries outside window
-        pipe.zremrangebyscore(key, "-inf", window_start)
-        
+
+        # Remove old entries outside the window
+        pipe.zremrangebyscore(key, 0, window_start)
+
         # Add current timestamp
         pipe.zadd(key, {str(now): now})
-        
-        # Count messages in window
-        pipe.zcard(key)
-        
-        # Set expiration
-        pipe.expire(key, window_seconds)
-        
-        results = await pipe.execute()
-        current_count = results[2]  # zcard result
 
-        is_allowed = current_count <= max_messages
-        return is_allowed, current_count
+        # Count entries in window
+        pipe.zcard(key)
+
+        # Set expiry on key
+        pipe.expire(key, window_seconds)
+
+        results = await pipe.execute()
+        count = int(results[2])
+
+        is_allowed = count <= max_messages
+        return (is_allowed, count)
 
     async def check_global_rate_limit(
-        self, max_messages: int = 100, window_seconds: int = 60
+        self, max_messages: int = 1000, window_seconds: int = 60
     ) -> tuple[bool, int]:
-        """Check global server rate limit.
+        """Check if global rate limit has been exceeded.
 
         Args:
-            max_messages: Maximum global messages allowed in window.
+            max_messages: Maximum messages allowed globally.
             window_seconds: Time window in seconds.
 
         Returns:
@@ -126,28 +126,26 @@ class RedisClient:
         if self.client is None:
             raise RuntimeError("Redis not connected. Call connect() first.")
 
-        key = "rate:global:messages"
-        now = datetime.now(timezone.utc).timestamp()
+        key = "ratelimit:global"
+        now = datetime.now(UTC).timestamp()
         window_start = now - window_seconds
 
         pipe = self.client.pipeline()
-        pipe.zremrangebyscore(key, "-inf", window_start)
+        pipe.zremrangebyscore(key, 0, window_start)
         pipe.zadd(key, {str(now): now})
         pipe.zcard(key)
         pipe.expire(key, window_seconds)
-        
-        results = await pipe.execute()
-        current_count = results[2]
 
-        is_allowed = current_count <= max_messages
-        return is_allowed, current_count
+        results = await pipe.execute()
+        count = int(results[2])
+
+        is_allowed = count <= max_messages
+        return (is_allowed, count)
 
     # Message Deduplication
 
-    async def is_duplicate_message(
-        self, message_id: int, ttl_seconds: int = 60
-    ) -> bool:
-        """Check if message has already been processed.
+    async def is_duplicate_message(self, message_id: int, ttl_seconds: int = 60) -> bool:
+        """Check if message has been seen recently.
 
         Uses Redis SET NX (set if not exists) to atomically mark messages.
 
@@ -164,19 +162,17 @@ class RedisClient:
         if self.client is None:
             raise RuntimeError("Redis not connected. Call connect() first.")
 
-        key = f"dedup:{message_id}"
-        
+        key = f"dedup:{message_id}".encode()
+
         # Try to set key with NX (only if not exists)
-        was_set = await self.client.set(key, "1", nx=True, ex=ttl_seconds)
-        
+        was_set = await self.client.set(key, b"1", nx=True, ex=ttl_seconds)
+
         # If set succeeded, it's not a duplicate
         return not bool(was_set)
 
     # Active Timeouts
 
-    async def set_active_timeout(
-        self, user_id: int, expires_at: datetime
-    ) -> None:
+    async def set_active_timeout(self, user_id: int, expires_at: datetime) -> None:
         """Mark user as actively timed out.
 
         Args:
@@ -189,11 +185,11 @@ class RedisClient:
         if self.client is None:
             raise RuntimeError("Redis not connected. Call connect() first.")
 
-        key = f"timeout:{user_id}"
-        ttl = int((expires_at - datetime.now(timezone.utc)).total_seconds())
-        
+        key = f"timeout:{user_id}".encode()
+        ttl = int((expires_at - datetime.now(UTC)).total_seconds())
+
         if ttl > 0:
-            await self.client.setex(key, ttl, expires_at.isoformat())
+            await self.client.setex(key, ttl, expires_at.isoformat().encode())
 
     async def is_user_timed_out(self, user_id: int) -> bool:
         """Check if user is currently timed out.
@@ -210,7 +206,7 @@ class RedisClient:
         if self.client is None:
             raise RuntimeError("Redis not connected. Call connect() first.")
 
-        key = f"timeout:{user_id}"
+        key = f"timeout:{user_id}".encode()
         exists = await self.client.exists(key)
         return bool(exists)
 
@@ -226,7 +222,7 @@ class RedisClient:
         if self.client is None:
             raise RuntimeError("Redis not connected. Call connect() first.")
 
-        key = f"timeout:{user_id}"
+        key = f"timeout:{user_id}".encode()
         await self.client.delete(key)
 
     # Brigade Detection
@@ -247,32 +243,31 @@ class RedisClient:
         if self.client is None:
             raise RuntimeError("Redis not connected. Call connect() first.")
 
-        # Use minute as key granularity
+        # Round timestamp to minute
         minute_key = timestamp.strftime("%Y%m%d%H%M")
-        key = f"brigade:joins:{minute_key}"
-        
+        key = f"brigade:joins:{minute_key}".encode()
+
+        # Use pipeline for atomic operations
         pipe = self.client.pipeline()
-        pipe.sadd(key, user_id)
+        pipe.sadd(key, str(user_id).encode())
         pipe.expire(key, 600)  # Keep for 10 minutes
         pipe.scard(key)
-        
+
         results = await pipe.execute()
-        return results[2]  # scard result
+        return int(results[2])
 
     async def track_similar_message(
-        self, content: str, user_id: int, timestamp: datetime
+        self, content: str, timestamp: datetime, _similarity_threshold: float = 0.8
     ) -> int:
         """Track similar messages for brigade detection.
 
-        Uses content hash to identify similar messages.
-
         Args:
             content: Message content.
-            user_id: Discord user ID.
             timestamp: Message timestamp.
+            similarity_threshold: Similarity threshold (not used in this implementation).
 
         Returns:
-            Number of users who sent similar messages in window.
+            Number of similar messages in the current minute.
 
         Raises:
             redis.RedisError: If Redis operation fails.
@@ -280,21 +275,24 @@ class RedisClient:
         if self.client is None:
             raise RuntimeError("Redis not connected. Call connect() first.")
 
-        # Hash message content
-        content_hash = hashlib.md5(content.lower().strip().encode()).hexdigest()[:12]
+        # Create content hash
+        content_hash = hashlib.sha256(content.encode()).hexdigest()[:16]
+
+        # Round timestamp to minute
         minute_key = timestamp.strftime("%Y%m%d%H%M")
-        key = f"brigade:messages:{minute_key}:{content_hash}"
-        
+        key = f"brigade:messages:{minute_key}:{content_hash}".encode()
+
+        # Use pipeline for atomic operations
         pipe = self.client.pipeline()
-        pipe.sadd(key, user_id)
+        pipe.incr(key)
         pipe.expire(key, 600)  # Keep for 10 minutes
-        pipe.scard(key)
-        
+        pipe.get(key)
+
         results = await pipe.execute()
-        return results[2]
+        return int(results[2])
 
     async def get_recent_joins(self, minutes: int = 5) -> set[int]:
-        """Get all user IDs that joined recently.
+        """Get user IDs that joined recently.
 
         Args:
             minutes: Number of minutes to look back.
@@ -308,24 +306,22 @@ class RedisClient:
         if self.client is None:
             raise RuntimeError("Redis not connected. Call connect() first.")
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         user_ids: set[int] = set()
-        
+
         for i in range(minutes):
             timestamp = now - timedelta(minutes=i)
             minute_key = timestamp.strftime("%Y%m%d%H%M")
-            key = f"brigade:joins:{minute_key}"
-            
+            key = f"brigade:joins:{minute_key}".encode()
+
             members = await self.client.smembers(key)
-            user_ids.update(int(uid) for uid in members)
-        
+            user_ids.update(int(uid.decode()) for uid in members)
+
         return user_ids
 
     # Caching
 
-    async def cache_set(
-        self, key: str, value: Any, ttl_seconds: int = 3600
-    ) -> None:
+    async def cache_set(self, key: str, value: Any, ttl_seconds: int = 3600) -> None:
         """Cache a value with TTL.
 
         Args:
@@ -339,8 +335,8 @@ class RedisClient:
         if self.client is None:
             raise RuntimeError("Redis not connected. Call connect() first.")
 
-        serialized = json.dumps(value)
-        await self.client.setex(f"cache:{key}", ttl_seconds, serialized)
+        serialized = json.dumps(value).encode()
+        await self.client.setex(f"cache:{key}".encode(), ttl_seconds, serialized)
 
     async def cache_get(self, key: str) -> Any | None:
         """Get cached value.
@@ -357,11 +353,11 @@ class RedisClient:
         if self.client is None:
             raise RuntimeError("Redis not connected. Call connect() first.")
 
-        value = await self.client.get(f"cache:{key}")
+        value = await self.client.get(f"cache:{key}".encode())
         if value is None:
             return None
-        
-        return json.loads(value)
+
+        return json.loads(value.decode())
 
     async def cache_delete(self, key: str) -> None:
         """Delete cached value.
@@ -375,7 +371,7 @@ class RedisClient:
         if self.client is None:
             raise RuntimeError("Redis not connected. Call connect() first.")
 
-        await self.client.delete(f"cache:{key}")
+        await self.client.delete(f"cache:{key}".encode())
 
     # Health Check
 
@@ -405,36 +401,36 @@ class RedisClient:
         """
         if self.client is None:
             raise RuntimeError("Redis not connected. Call connect() first.")
-        
-        now = datetime.now(timezone.utc)
+
+        now = datetime.now(UTC)
         cutoff = now - timedelta(minutes=10)
-        
-        patterns = ["brigade:joins:*", "brigade:messages:*"]
-        
+
+        patterns = [b"brigade:joins:*", b"brigade:messages:*"]
+
         for pattern in patterns:
             cursor = 0
             while True:
                 # Use SCAN instead of KEYS for production safety
                 cursor, keys = await self.client.scan(cursor, match=pattern, count=100)
-                
+
                 for key in keys:
                     try:
                         # Parse timestamp from key (format: brigade:joins:YYYYMMDDHHMM)
-                        parts = key.split(":")
+                        parts = key.decode("utf-8").split(":")
                         if len(parts) >= 3:
                             timestamp_str = parts[-1]
                             # Check if it's a valid timestamp format
                             if timestamp_str.isdigit() and len(timestamp_str) == 12:
                                 key_time = datetime.strptime(timestamp_str, "%Y%m%d%H%M")
                                 # Make it timezone-aware for comparison
-                                key_time = key_time.replace(tzinfo=timezone.utc)
-                                
+                                key_time = key_time.replace(tzinfo=UTC)
+
                                 if key_time < cutoff:
                                     await self.client.delete(key)
                     except (ValueError, IndexError):
                         # Skip malformed keys
                         pass
-                
+
                 # SCAN returns 0 when iteration is complete
                 if cursor == 0:
                     break

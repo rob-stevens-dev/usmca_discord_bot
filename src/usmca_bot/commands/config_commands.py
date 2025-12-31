@@ -4,8 +4,6 @@ This module provides commands for managing bot configuration including
 thresholds, timeouts, and brigade detection settings.
 """
 
-from typing import Literal
-
 import discord
 
 from usmca_bot.commands.base import BaseCommand, CommandContext, InvalidArgumentError
@@ -82,8 +80,10 @@ class ThresholdCommand(BaseCommand):
         threshold_type = ctx.args[0].lower()
         try:
             value = float(ctx.args[1])
-        except ValueError:
-            raise InvalidArgumentError(f"Invalid value '{ctx.args[1]}'. Must be a number between 0.0 and 1.0")
+        except ValueError as e:
+            raise InvalidArgumentError(
+                f"Invalid value '{ctx.args[1]}'. Must be a number between 0.0 and 1.0"
+            ) from e
 
         if not 0.0 <= value <= 1.0:
             raise InvalidArgumentError(f"Value must be between 0.0 and 1.0, got {value}")
@@ -188,8 +188,8 @@ class TimeoutCommand(BaseCommand):
         level = ctx.args[0].lower()
         try:
             seconds = int(ctx.args[1])
-        except ValueError:
-            raise InvalidArgumentError(f"Invalid value '{ctx.args[1]}'. Must be an integer")
+        except ValueError as e:
+            raise InvalidArgumentError(f"Invalid value '{ctx.args[1]}'. Must be an integer") from e
 
         if seconds < 60 or seconds > 2419200:  # 60s to 28 days
             raise InvalidArgumentError("Duration must be between 60 seconds and 28 days")
@@ -288,8 +288,8 @@ class BrigadeCommand(BaseCommand):
         setting = ctx.args[0].lower()
         try:
             value = int(ctx.args[1])
-        except ValueError:
-            raise InvalidArgumentError(f"Invalid value '{ctx.args[1]}'. Must be an integer")
+        except ValueError as e:
+            raise InvalidArgumentError(f"Invalid value '{ctx.args[1]}'. Must be an integer") from e
 
         # Map settings to attributes and validate
         if setting == "joins":

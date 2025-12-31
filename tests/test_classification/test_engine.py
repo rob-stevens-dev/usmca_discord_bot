@@ -158,18 +158,14 @@ class TestClassificationEngine:
         assert result.toxicity_scores.toxicity == 0.0
 
     @pytest.mark.asyncio
-    async def test_classify_message_error_handling(
-        self, engine: ClassificationEngine
-    ) -> None:
+    async def test_classify_message_error_handling(self, engine: ClassificationEngine) -> None:
         """Test classify_message handles errors.
 
         Args:
             engine: ClassificationEngine fixture.
         """
         # Mock detector to raise error
-        engine.toxicity_detector.predict = AsyncMock(
-            side_effect=RuntimeError("Model error")
-        )
+        engine.toxicity_detector.predict = AsyncMock(side_effect=RuntimeError("Model error"))
 
         with pytest.raises(RuntimeError) as exc_info:
             await engine.classify_message("Test")
@@ -177,9 +173,7 @@ class TestClassificationEngine:
         assert "Message classification failed" in str(exc_info.value)
 
     @pytest.mark.asyncio
-    async def test_classify_messages_batch(
-        self, engine: ClassificationEngine
-    ) -> None:
+    async def test_classify_messages_batch(self, engine: ClassificationEngine) -> None:
         """Test classify_messages_batch returns multiple results.
 
         Args:
@@ -204,9 +198,7 @@ class TestClassificationEngine:
                 identity_attack=0.02,
             ),
         ]
-        engine.toxicity_detector.predict_batch = AsyncMock(
-            return_value=mock_scores_list
-        )
+        engine.toxicity_detector.predict_batch = AsyncMock(return_value=mock_scores_list)
 
         messages = ["Message 1", "Message 2"]
         results = await engine.classify_messages_batch(messages)
@@ -217,9 +209,7 @@ class TestClassificationEngine:
         assert results[1].toxicity_scores.toxicity == 0.2
 
     @pytest.mark.asyncio
-    async def test_classify_messages_batch_empty(
-        self, engine: ClassificationEngine
-    ) -> None:
+    async def test_classify_messages_batch_empty(self, engine: ClassificationEngine) -> None:
         """Test classify_messages_batch with empty list.
 
         Args:
@@ -252,17 +242,13 @@ class TestClassificationEngine:
             )
             for _ in range(5)
         ]
-        engine.toxicity_detector.predict_batch = AsyncMock(
-            return_value=mock_scores_list
-        )
+        engine.toxicity_detector.predict_batch = AsyncMock(return_value=mock_scores_list)
 
         messages = ["Message " + str(i) for i in range(5)]
         results = await engine.classify_messages_batch(messages, batch_size=2)
 
         assert len(results) == 5
-        engine.toxicity_detector.predict_batch.assert_called_once_with(
-            messages, batch_size=2
-        )
+        engine.toxicity_detector.predict_batch.assert_called_once_with(messages, batch_size=2)
 
     @pytest.mark.asyncio
     async def test_classify_messages_batch_error_handling(
@@ -274,18 +260,14 @@ class TestClassificationEngine:
             engine: ClassificationEngine fixture.
         """
         # Mock detector to raise error
-        engine.toxicity_detector.predict_batch = AsyncMock(
-            side_effect=RuntimeError("Batch error")
-        )
+        engine.toxicity_detector.predict_batch = AsyncMock(side_effect=RuntimeError("Batch error"))
 
         with pytest.raises(RuntimeError) as exc_info:
             await engine.classify_messages_batch(["Text 1", "Text 2"])
 
         assert "Batch classification failed" in str(exc_info.value)
 
-    def test_should_flag_message_above_threshold(
-        self, engine: ClassificationEngine
-    ) -> None:
+    def test_should_flag_message_above_threshold(self, engine: ClassificationEngine) -> None:
         """Test should_flag_message returns True above threshold.
 
         Args:
@@ -306,9 +288,7 @@ class TestClassificationEngine:
 
         assert engine.should_flag_message(result, threshold=0.5) is True
 
-    def test_should_flag_message_below_threshold(
-        self, engine: ClassificationEngine
-    ) -> None:
+    def test_should_flag_message_below_threshold(self, engine: ClassificationEngine) -> None:
         """Test should_flag_message returns False below threshold.
 
         Args:
@@ -329,9 +309,7 @@ class TestClassificationEngine:
 
         assert engine.should_flag_message(result, threshold=0.5) is False
 
-    def test_should_flag_message_at_threshold(
-        self, engine: ClassificationEngine
-    ) -> None:
+    def test_should_flag_message_at_threshold(self, engine: ClassificationEngine) -> None:
         """Test should_flag_message at exact threshold.
 
         Args:
@@ -352,9 +330,7 @@ class TestClassificationEngine:
 
         assert engine.should_flag_message(result, threshold=0.5) is True
 
-    def test_get_flag_reason_severe_toxicity(
-        self, engine: ClassificationEngine
-    ) -> None:
+    def test_get_flag_reason_severe_toxicity(self, engine: ClassificationEngine) -> None:
         """Test get_flag_reason for severe toxicity.
 
         Args:
@@ -400,9 +376,7 @@ class TestClassificationEngine:
 
         assert "threat" in reason.lower()
 
-    def test_get_flag_reason_multiple_factors(
-        self, engine: ClassificationEngine
-    ) -> None:
+    def test_get_flag_reason_multiple_factors(self, engine: ClassificationEngine) -> None:
         """Test get_flag_reason with multiple high scores.
 
         Args:
@@ -445,25 +419,25 @@ class TestClassificationEngine:
         )
         engine.toxicity_detector.predict = AsyncMock(return_value=mock_scores)
         # Mock the is_loaded property instead of setting it
-        with patch.object(type(engine.toxicity_detector), 'is_loaded', new_callable=lambda: property(lambda self: True)):
+        with patch.object(
+            type(engine.toxicity_detector),
+            "is_loaded",
+            new_callable=lambda: property(lambda self: True),
+        ):
             health = await engine.health_check()
 
         assert health["status"] == "healthy"
         assert health["test_classification"]["success"] is True
 
     @pytest.mark.asyncio
-    async def test_health_check_unhealthy(
-        self, engine: ClassificationEngine
-    ) -> None:
+    async def test_health_check_unhealthy(self, engine: ClassificationEngine) -> None:
         """Test health_check when engine has errors.
 
         Args:
             engine: ClassificationEngine fixture.
         """
         # Mock detector to raise error
-        engine.toxicity_detector.predict = AsyncMock(
-            side_effect=RuntimeError("Model error")
-        )
+        engine.toxicity_detector.predict = AsyncMock(side_effect=RuntimeError("Model error"))
 
         health = await engine.health_check()
 
@@ -489,9 +463,7 @@ class TestClassificationEngine:
             )
             for _ in range(3)
         ]
-        engine.toxicity_detector.predict_batch = AsyncMock(
-            return_value=mock_scores_list
-        )
+        engine.toxicity_detector.predict_batch = AsyncMock(return_value=mock_scores_list)
 
         # Should not raise exception
         await engine.warmup()
@@ -499,9 +471,7 @@ class TestClassificationEngine:
         engine.toxicity_detector.predict_batch.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_warmup_error_handling(
-        self, engine: ClassificationEngine
-    ) -> None:
+    async def test_warmup_error_handling(self, engine: ClassificationEngine) -> None:
         """Test warmup handles errors gracefully.
 
         Args:

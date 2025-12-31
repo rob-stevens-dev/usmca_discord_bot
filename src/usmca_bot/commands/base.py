@@ -6,8 +6,6 @@ authorization, error handling, and audit logging.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any
 
 import discord
 import structlog
@@ -186,7 +184,7 @@ class BaseCommand(ABC):
                 exc_info=True,
             )
             await self._audit_log(ctx, success=False, error=f"Unexpected error: {e}")
-            raise CommandError(f"Command failed: {e}")
+            raise CommandError(f"Command failed: {e}") from e
 
     @abstractmethod
     async def _execute(self, ctx: CommandContext) -> None:
@@ -203,9 +201,7 @@ class BaseCommand(ABC):
         """
         pass
 
-    async def _audit_log(
-        self, ctx: CommandContext, success: bool, error: str | None
-    ) -> None:
+    async def _audit_log(self, ctx: CommandContext, success: bool, error: str | None) -> None:
         """Log command execution to audit trail.
 
         Args:
@@ -239,9 +235,7 @@ class BaseCommand(ABC):
                 error=str(e),
             )
 
-    def require_args(
-        self, ctx: CommandContext, min_args: int, max_args: int | None = None
-    ) -> None:
+    def require_args(self, ctx: CommandContext, min_args: int, max_args: int | None = None) -> None:
         """Validate argument count.
 
         Args:
@@ -255,14 +249,10 @@ class BaseCommand(ABC):
         arg_count = len(ctx.args)
 
         if arg_count < min_args:
-            raise InvalidArgumentError(
-                f"Not enough arguments. Usage: {self.usage}"
-            )
+            raise InvalidArgumentError(f"Not enough arguments. Usage: {self.usage}")
 
         if max_args is not None and arg_count > max_args:
-            raise InvalidArgumentError(
-                f"Too many arguments. Usage: {self.usage}"
-            )
+            raise InvalidArgumentError(f"Too many arguments. Usage: {self.usage}")
 
 
 class CommandRegistry:

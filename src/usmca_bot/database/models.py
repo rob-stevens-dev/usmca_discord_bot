@@ -4,25 +4,25 @@ This module defines Pydantic models for all database entities, providing
 type safety, validation, and serialization.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
 
 def utcnow() -> datetime:
     """Get current UTC datetime.
-    
+
     Returns:
         Current datetime in UTC timezone.
     """
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class ToxicityScores(BaseModel):
     """Toxicity classification scores."""
-    
+
     toxicity: float = Field(ge=0.0, le=1.0)
     severe_toxicity: float = Field(ge=0.0, le=1.0)
     obscene: float = Field(ge=0.0, le=1.0)
@@ -33,7 +33,7 @@ class ToxicityScores(BaseModel):
     @property
     def max_score(self) -> float:
         """Get the maximum score across all categories.
-        
+
         Returns:
             The highest toxicity score.
         """
@@ -48,13 +48,13 @@ class ToxicityScores(BaseModel):
 
     def is_toxic(self, threshold: float = 0.5) -> bool:
         """Check if any score exceeds the toxicity threshold.
-        
+
         Args:
             threshold: Toxicity threshold (default: 0.5).
-        
+
         Returns:
             True if any score exceeds threshold.
-        
+
         Example:
             >>> scores = ToxicityScores(toxicity=0.8, severe_toxicity=0.1, obscene=0.1, threat=0.1, insult=0.1, identity_attack=0.1)
             >>> scores.is_toxic()  # Uses default 0.5
@@ -119,13 +119,13 @@ class User(BaseModel):
 
     def is_new_account(self, days: int = 7) -> bool:
         """Check if account is considered new.
-        
+
         Args:
             days: Number of days to consider "new" (default: 7).
-        
+
         Returns:
             True if account joined within the specified days.
-        
+
         Example:
             >>> from datetime import timedelta
             >>> user = User(user_id=123, username="test", joined_at=datetime.now(timezone.utc) - timedelta(days=3))
@@ -134,7 +134,7 @@ class User(BaseModel):
             >>> user.is_new_account(30)  # Custom threshold
             True
         """
-        age = datetime.now(timezone.utc) - self.joined_at
+        age = datetime.now(UTC) - self.joined_at
         return age.days < days
 
 
@@ -261,23 +261,32 @@ class ModerationAction(BaseModel):
     appeal_id: int | None = None
     created_at: datetime = Field(default_factory=utcnow)
 
-    @field_validator("expires_at")
+    @field_validator("expires_at", mode="after")
     @classmethod
-    def validate_expires_at(cls, v: datetime | None, info: dict) -> datetime | None:
-        """Validate that expires_at is set for timeouts.
+    def validate_expires_at(cls, v: datetime | None, info: ValidationInfo) -> datetime | None:
+        """Validate timeout expiration.
 
         Args:
-            v: Expiration timestamp.
-            info: Field validation info.
+            v: The expires_at value
+            info: Validation context with access to other fields
 
         Returns:
-            Validated expiration timestamp.
+            The validated expires_at value
 
         Raises:
-            ValueError: If timeout has no expiration.
+            ValueError: If timeout action lacks expires_at
         """
-        if info.data.get("action_type") == "timeout" and v is None:
+        # Get action_type from the model data
+        action_type = info.data.get("action_type")
+
+        # Timeout actions MUST have expires_at
+        if action_type == "timeout" and v is None:
             raise ValueError("Timeout actions must have expires_at set")
+
+        # Non-timeout actions should NOT have expires_at
+        if action_type != "timeout" and v is not None:
+            raise ValueError(f"{action_type} actions should not have expires_at")
+
         return v
 
 

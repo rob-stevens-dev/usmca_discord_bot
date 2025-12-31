@@ -3,7 +3,7 @@
 This module tests user behavior analysis and risk scoring.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
 
 import pytest
@@ -62,7 +62,7 @@ class TestBehaviorAnalyzer:
         )
 
         messages = [sample_message for _ in range(10)]
-        
+
         score = await analyzer.analyze_user(low_risk_user, messages)
 
         assert isinstance(score, BehaviorScore)
@@ -100,7 +100,7 @@ class TestBehaviorAnalyzer:
         )
 
         messages = [sample_message for _ in range(10)]
-        for msg in messages:
+        for _msg in messages:
             # Create new messages with high toxicity instead of modifying
             pass  # Messages already have toxicity scores from fixture
 
@@ -142,7 +142,7 @@ class TestBehaviorAnalyzer:
             sample_message: Sample message fixture.
         """
         # Create messages with rapid timing (10 messages in 1 minute)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         messages = []
         for i in range(10):
             msg = Message(
@@ -155,9 +155,7 @@ class TestBehaviorAnalyzer:
             )
             messages.append(msg)
 
-        multiplier = await analyzer._calculate_velocity_multiplier(
-            sample_user, messages
-        )
+        multiplier = await analyzer._calculate_velocity_multiplier(sample_user, messages)
 
         assert multiplier > 1.0
 
@@ -188,9 +186,7 @@ class TestBehaviorAnalyzer:
             )
             messages.append(msg)
 
-        multiplier = await analyzer._calculate_escalation_multiplier(
-            sample_user, messages
-        )
+        multiplier = await analyzer._calculate_escalation_multiplier(sample_user, messages)
 
         assert multiplier > 1.0
 
@@ -261,7 +257,7 @@ class TestBehaviorAnalyzer:
             username=sample_user.username,
             discriminator=sample_user.discriminator,
             display_name=sample_user.display_name,
-            joined_at=datetime.now(timezone.utc) - timedelta(hours=12),
+            joined_at=datetime.now(UTC) - timedelta(hours=12),
         )
 
         multiplier = analyzer._calculate_new_account_multiplier(new_user)
@@ -283,7 +279,7 @@ class TestBehaviorAnalyzer:
             username=sample_user.username,
             discriminator=sample_user.discriminator,
             display_name=sample_user.display_name,
-            joined_at=datetime.now(timezone.utc) - timedelta(days=30),
+            joined_at=datetime.now(UTC) - timedelta(days=30),
         )
 
         multiplier = analyzer._calculate_new_account_multiplier(old_user)
@@ -303,9 +299,7 @@ class TestBehaviorAnalyzer:
 
         assert risk_level == "green"
 
-    def test_determine_risk_level_red(
-        self, analyzer: BehaviorAnalyzer, sample_user: User
-    ) -> None:
+    def test_determine_risk_level_red(self, analyzer: BehaviorAnalyzer, sample_user: User) -> None:
         """Test risk level determination for high risk.
 
         Args:
@@ -369,9 +363,7 @@ class TestBehaviorAnalyzer:
         # Mock action history
         mock_postgres_client.get_user_action_history = AsyncMock(return_value=[])
 
-        should_escalate, reason = await analyzer.should_escalate_action(
-            repeat_offender, 0.75
-        )
+        should_escalate, reason = await analyzer.should_escalate_action(repeat_offender, 0.75)
 
         assert should_escalate is True
         assert "repeat offender" in reason.lower()
@@ -394,7 +386,7 @@ class TestBehaviorAnalyzer:
             username=sample_user.username,
             discriminator=sample_user.discriminator,
             display_name=sample_user.display_name,
-            joined_at=datetime.now(timezone.utc) - timedelta(days=2),
+            joined_at=datetime.now(UTC) - timedelta(days=2),
             total_messages=5,
         )
 

@@ -3,9 +3,6 @@
 This module tests Settings validation, loading, and helper methods.
 """
 
-import os
-from typing import Any
-
 import pytest
 from pydantic import ValidationError
 
@@ -33,9 +30,7 @@ class TestSettings:
         assert settings.discord_guild_id == 123456789012345678
         assert settings.log_level == "DEBUG"
 
-    def test_settings_validation_token_too_short(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_settings_validation_token_too_short(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test validation fails for short Discord token.
 
         Args:
@@ -51,9 +46,7 @@ class TestSettings:
 
         assert "discord_token" in str(exc_info.value)
 
-    def test_settings_validation_guild_id_negative(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_settings_validation_guild_id_negative(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test validation fails for negative guild ID.
 
         Args:
@@ -69,9 +62,7 @@ class TestSettings:
 
         assert "discord_guild_id" in str(exc_info.value)
 
-    def test_pool_size_validation_invalid(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_pool_size_validation_invalid(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test validation fails when max pool size <= min pool size.
 
         Args:
@@ -89,9 +80,7 @@ class TestSettings:
 
         assert "postgres_max_pool_size" in str(exc_info.value)
 
-    def test_threshold_ordering_validation(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_threshold_ordering_validation(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test validation enforces threshold ordering.
 
         Args:
@@ -128,9 +117,7 @@ class TestSettings:
         duration = test_settings.get_timeout_duration(1)
         assert duration == test_settings.timeout_second
 
-    def test_get_timeout_duration_third_and_beyond(
-        self, test_settings: Settings
-    ) -> None:
+    def test_get_timeout_duration_third_and_beyond(self, test_settings: Settings) -> None:
         """Test getting third and subsequent timeout durations.
 
         Args:
@@ -144,9 +131,7 @@ class TestSettings:
         assert duration_fourth == test_settings.timeout_third
         assert duration_tenth == test_settings.timeout_third
 
-    def test_get_threshold_for_action_warning(
-        self, test_settings: Settings
-    ) -> None:
+    def test_get_threshold_for_action_warning(self, test_settings: Settings) -> None:
         """Test getting threshold for warning action.
 
         Args:
@@ -155,9 +140,7 @@ class TestSettings:
         threshold = test_settings.get_threshold_for_action("warning")
         assert threshold == test_settings.toxicity_warning_threshold
 
-    def test_get_threshold_for_action_timeout(
-        self, test_settings: Settings
-    ) -> None:
+    def test_get_threshold_for_action_timeout(self, test_settings: Settings) -> None:
         """Test getting threshold for timeout action.
 
         Args:
@@ -184,9 +167,7 @@ class TestSettings:
         threshold = test_settings.get_threshold_for_action("ban")
         assert threshold == test_settings.toxicity_ban_threshold
 
-    def test_get_threshold_for_action_invalid(
-        self, test_settings: Settings
-    ) -> None:
+    def test_get_threshold_for_action_invalid(self, test_settings: Settings) -> None:
         """Test getting threshold for invalid action raises error.
 
         Args:
@@ -209,7 +190,7 @@ class TestSettings:
         assert test_settings.toxicity_warning_threshold == 0.4
         assert test_settings.toxicity_timeout_threshold == 0.55
         assert test_settings.toxicity_kick_threshold == 0.75
-        assert test_settings.toxicity_ban_threshold == 0.88        
+        assert test_settings.toxicity_ban_threshold == 0.88
         assert test_settings.timeout_first == 7200
         assert test_settings.timeout_second == 86400
         assert test_settings.timeout_third == 604800
@@ -234,9 +215,7 @@ class TestSettings:
 class TestGetSettings:
     """Test suite for get_settings() function."""
 
-    def test_get_settings_returns_same_instance(
-        self, test_settings: Settings
-    ) -> None:
+    def test_get_settings_returns_same_instance(self, test_settings: Settings) -> None:
         """Test get_settings() returns cached instance.
 
         Args:
@@ -252,9 +231,7 @@ class TestGetSettings:
 
         assert settings1 is settings2
 
-    def test_reload_settings_creates_new_instance(
-        self, test_settings: Settings
-    ) -> None:
+    def test_reload_settings_creates_new_instance(self, test_settings: Settings) -> None:
         """Test reload_settings() creates new instance.
 
         Args:
@@ -265,7 +242,7 @@ class TestGetSettings:
 
         # They should be different instances
         assert settings1 is not settings2
-            
+
     def test_dry_run_mode_default(self, test_settings: Settings) -> None:
         """Test dry run mode defaults to False."""
         assert test_settings.dry_run_mode is True
@@ -332,7 +309,8 @@ class TestThresholdValidation:
         else:
             with pytest.raises(ValidationError):
                 Settings()
-                
+
+
 class TestChannelFiltering:
     """Test suite for channel filtering configuration."""
 
@@ -342,9 +320,7 @@ class TestChannelFiltering:
         assert test_settings.should_monitor_channel(456) is True
         assert test_settings.should_monitor_channel(789) is True
 
-    def test_allowlist_filters_correctly(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_allowlist_filters_correctly(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test allowlist only monitors specified channels."""
         monkeypatch.setenv("DISCORD_TOKEN", "x" * 59)
         monkeypatch.setenv("DISCORD_GUILD_ID", "123456789012345678")
@@ -359,9 +335,7 @@ class TestChannelFiltering:
         assert settings.should_monitor_channel(789) is True
         assert settings.should_monitor_channel(999) is False
 
-    def test_blocklist_filters_correctly(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_blocklist_filters_correctly(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test blocklist monitors all except specified channels."""
         monkeypatch.setenv("DISCORD_TOKEN", "x" * 59)
         monkeypatch.setenv("DISCORD_GUILD_ID", "123456789012345678")
@@ -392,9 +366,7 @@ class TestChannelFiltering:
 
         assert "Cannot use both" in str(exc_info.value)
 
-    def test_empty_string_parsing(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_empty_string_parsing(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test empty string is parsed as empty list."""
         monkeypatch.setenv("DISCORD_TOKEN", "x" * 59)
         monkeypatch.setenv("DISCORD_GUILD_ID", "123456789012345678")

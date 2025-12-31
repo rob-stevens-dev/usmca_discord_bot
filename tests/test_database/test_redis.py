@@ -3,7 +3,7 @@
 Tests all RedisClient methods with proper async mocking.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -24,9 +24,7 @@ class TestRedisClientInit:
 
     @pytest.mark.asyncio
     @patch("usmca_bot.database.redis.redis.from_url")
-    async def test_connect_success(
-        self, mock_from_url: MagicMock, test_settings: Settings
-    ) -> None:
+    async def test_connect_success(self, mock_from_url: MagicMock, test_settings: Settings) -> None:
         """Test successful connection."""
         mock_redis = AsyncMock()
         mock_redis.ping = AsyncMock()
@@ -39,9 +37,7 @@ class TestRedisClientInit:
         mock_redis.ping.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_disconnect_when_connected(
-        self, test_settings: Settings
-    ) -> None:
+    async def test_disconnect_when_connected(self, test_settings: Settings) -> None:
         """Test disconnect closes client."""
         client = RedisClient(test_settings)
         mock_redis = AsyncMock()
@@ -49,13 +45,11 @@ class TestRedisClientInit:
 
         await client.disconnect()
 
-        mock_redis.aclose.assert_awaited_once()
+        mock_redis.close.assert_awaited_once()
         assert client.client is None
 
     @pytest.mark.asyncio
-    async def test_disconnect_when_not_connected(
-        self, test_settings: Settings
-    ) -> None:
+    async def test_disconnect_when_not_connected(self, test_settings: Settings) -> None:
         """Test disconnect without connection."""
         client = RedisClient(test_settings)
         await client.disconnect()
@@ -74,9 +68,7 @@ class TestRedisClientRateLimiting:
         return client
 
     @pytest.mark.asyncio
-    async def test_check_rate_limit_without_connection(
-        self, test_settings: Settings
-    ) -> None:
+    async def test_check_rate_limit_without_connection(self, test_settings: Settings) -> None:
         """Test rate limit check raises error when not connected."""
         client = RedisClient(test_settings)
 
@@ -84,9 +76,7 @@ class TestRedisClientRateLimiting:
             await client.check_user_rate_limit(123456789)
 
     @pytest.mark.asyncio
-    async def test_check_user_rate_limit_allowed(
-        self, client_with_redis: RedisClient
-    ) -> None:
+    async def test_check_user_rate_limit_allowed(self, client_with_redis: RedisClient) -> None:
         """Test rate limit check when under limit."""
         # Mock pipeline - pipeline() returns the mock, methods are sync
         mock_pipeline = MagicMock()
@@ -105,9 +95,7 @@ class TestRedisClientRateLimiting:
         assert count == 5
 
     @pytest.mark.asyncio
-    async def test_check_user_rate_limit_exceeded(
-        self, client_with_redis: RedisClient
-    ) -> None:
+    async def test_check_user_rate_limit_exceeded(self, client_with_redis: RedisClient) -> None:
         """Test rate limit check when limit exceeded."""
         # Mock pipeline - 15 messages (over limit of 10)
         mock_pipeline = MagicMock()
@@ -126,9 +114,7 @@ class TestRedisClientRateLimiting:
         assert count == 15
 
     @pytest.mark.asyncio
-    async def test_check_global_rate_limit(
-        self, client_with_redis: RedisClient
-    ) -> None:
+    async def test_check_global_rate_limit(self, client_with_redis: RedisClient) -> None:
         """Test global rate limit check."""
         mock_pipeline = MagicMock()
         mock_pipeline.zremrangebyscore = MagicMock(return_value=mock_pipeline)
@@ -158,30 +144,22 @@ class TestRedisClientDeduplication:
         return client
 
     @pytest.mark.asyncio
-    async def test_is_duplicate_message_new(
-        self, client_with_redis: RedisClient
-    ) -> None:
+    async def test_is_duplicate_message_new(self, client_with_redis: RedisClient) -> None:
         """Test checking if message is duplicate (new message)."""
         # set() returns True when key was set (not a duplicate)
         client_with_redis.client.set = AsyncMock(return_value=True)
 
-        is_dup = await client_with_redis.is_duplicate_message(
-            message_id=987654321, ttl_seconds=60
-        )
+        is_dup = await client_with_redis.is_duplicate_message(message_id=987654321, ttl_seconds=60)
 
         assert is_dup is False
 
     @pytest.mark.asyncio
-    async def test_is_duplicate_message_duplicate(
-        self, client_with_redis: RedisClient
-    ) -> None:
+    async def test_is_duplicate_message_duplicate(self, client_with_redis: RedisClient) -> None:
         """Test checking if message is duplicate (duplicate found)."""
         # set() returns None when key already exists (is a duplicate)
         client_with_redis.client.set = AsyncMock(return_value=None)
 
-        is_dup = await client_with_redis.is_duplicate_message(
-            message_id=987654321, ttl_seconds=60
-        )
+        is_dup = await client_with_redis.is_duplicate_message(message_id=987654321, ttl_seconds=60)
 
         assert is_dup is True
 
@@ -198,21 +176,17 @@ class TestRedisClientTimeouts:
         return client
 
     @pytest.mark.asyncio
-    async def test_set_active_timeout(
-        self, client_with_redis: RedisClient
-    ) -> None:
+    async def test_set_active_timeout(self, client_with_redis: RedisClient) -> None:
         """Test setting active timeout."""
         client_with_redis.client.setex = AsyncMock()
 
-        expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+        expires_at = datetime.now(UTC) + timedelta(hours=1)
         await client_with_redis.set_active_timeout(123456789, expires_at)
 
         client_with_redis.client.setex.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_is_user_timed_out_true(
-        self, client_with_redis: RedisClient
-    ) -> None:
+    async def test_is_user_timed_out_true(self, client_with_redis: RedisClient) -> None:
         """Test checking if user is timed out (yes)."""
         client_with_redis.client.exists = AsyncMock(return_value=1)
 
@@ -221,9 +195,7 @@ class TestRedisClientTimeouts:
         assert is_timed_out is True
 
     @pytest.mark.asyncio
-    async def test_is_user_timed_out_false(
-        self, client_with_redis: RedisClient
-    ) -> None:
+    async def test_is_user_timed_out_false(self, client_with_redis: RedisClient) -> None:
         """Test checking if user is timed out (no)."""
         client_with_redis.client.exists = AsyncMock(return_value=0)
 
@@ -232,9 +204,7 @@ class TestRedisClientTimeouts:
         assert is_timed_out is False
 
     @pytest.mark.asyncio
-    async def test_clear_timeout(
-        self, client_with_redis: RedisClient
-    ) -> None:
+    async def test_clear_timeout(self, client_with_redis: RedisClient) -> None:
         """Test clearing timeout."""
         client_with_redis.client.delete = AsyncMock()
 
@@ -255,9 +225,7 @@ class TestRedisClientBrigadeDetection:
         return client
 
     @pytest.mark.asyncio
-    async def test_track_join_event(
-        self, client_with_redis: RedisClient
-    ) -> None:
+    async def test_track_join_event(self, client_with_redis: RedisClient) -> None:
         """Test tracking member join."""
         mock_pipeline = MagicMock()
         mock_pipeline.sadd = MagicMock(return_value=mock_pipeline)
@@ -267,15 +235,13 @@ class TestRedisClientBrigadeDetection:
         client_with_redis.client.pipeline = MagicMock(return_value=mock_pipeline)
 
         count = await client_with_redis.track_join_event(
-            user_id=123456789, timestamp=datetime.now(timezone.utc)
+            user_id=123456789, timestamp=datetime.now(UTC)
         )
 
         assert count == 10
 
     @pytest.mark.asyncio
-    async def test_track_similar_message(
-        self, client_with_redis: RedisClient
-    ) -> None:
+    async def test_track_similar_message(self, client_with_redis: RedisClient) -> None:
         """Test tracking similar messages."""
         mock_pipeline = MagicMock()
         mock_pipeline.sadd = MagicMock(return_value=mock_pipeline)
@@ -285,29 +251,29 @@ class TestRedisClientBrigadeDetection:
         client_with_redis.client.pipeline = MagicMock(return_value=mock_pipeline)
 
         count = await client_with_redis.track_similar_message(
-            content="Test message",
-            user_id=123456789,
-            timestamp=datetime.now(timezone.utc)
+            content="Test message", timestamp=datetime.now(UTC)
         )
 
         assert count == 5
 
     @pytest.mark.asyncio
-    async def test_get_recent_joins(
-        self, client_with_redis: RedisClient
-    ) -> None:
+    async def test_get_recent_joins(self, client_with_redis: RedisClient) -> None:
         """Test getting recent member joins."""
         # Mock keys() to return brigade keys
-        client_with_redis.client.keys = AsyncMock(return_value=[
-            "brigade:joins:202412301430",
-            "brigade:joins:202412301431",
-        ])
-        
+        client_with_redis.client.keys = AsyncMock(
+            return_value=[
+                "brigade:joins:202412301430",
+                "brigade:joins:202412301431",
+            ]
+        )
+
         # Mock smembers() to return user IDs
-        client_with_redis.client.smembers = AsyncMock(return_value={
-            "123456789",
-            "987654321",
-        })
+        client_with_redis.client.smembers = AsyncMock(
+            return_value={
+                b"123456789",
+                b"987654321",
+            }
+        )
 
         joins = await client_with_redis.get_recent_joins(minutes=5)
 

@@ -4,11 +4,11 @@ This module provides comprehensive tests for all command infrastructure,
 authorization, and command implementations.
 """
 
-import pytest
-from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock, MagicMock
 
 import discord
+import pytest
 
 from usmca_bot.commands.base import (
     BaseCommand,
@@ -216,9 +216,7 @@ class TestCommandContext:
         mock_discord_channel.send.assert_called_once_with("Test message")
 
     @pytest.mark.asyncio
-    async def test_reply_error_sends_formatted_message(
-        self, command_context, mock_discord_channel
-    ):
+    async def test_reply_error_sends_formatted_message(self, command_context, mock_discord_channel):
         """Test reply_error sends formatted error."""
         await command_context.reply_error("Something went wrong")
         mock_discord_channel.send.assert_called_once()
@@ -542,7 +540,6 @@ class TestBrigadeCommand:
         cmd = BrigadeCommand()
         command_context.args = ["messages", "8"]
 
-        old_value = command_context.settings.brigade_similar_messages
         await cmd._execute(command_context)
 
         assert command_context.settings.brigade_similar_messages == 8
@@ -558,9 +555,7 @@ class TestModeCommand:
     """Test suite for ModeCommand."""
 
     @pytest.mark.asyncio
-    async def test_show_mode_displays_current(
-        self, command_context, mock_discord_channel
-    ):
+    async def test_show_mode_displays_current(self, command_context, mock_discord_channel):
         """Test mode show displays current mode."""
         cmd = ModeCommand()
 
@@ -610,9 +605,7 @@ class TestStatusCommand:
     """Test suite for StatusCommand."""
 
     @pytest.mark.asyncio
-    async def test_status_displays_configuration(
-        self, command_context, mock_discord_channel
-    ):
+    async def test_status_displays_configuration(self, command_context, mock_discord_channel):
         """Test status displays bot configuration."""
         cmd = StatusCommand()
 
@@ -634,9 +627,7 @@ class TestStatsCommand:
     """Test suite for StatsCommand."""
 
     @pytest.mark.asyncio
-    async def test_stats_today(
-        self, command_context, mock_postgres_client, mock_discord_channel
-    ):
+    async def test_stats_today(self, command_context, mock_postgres_client, mock_discord_channel):
         """Test stats today displays statistics."""
         cmd = StatsCommand()
         command_context.args = ["today"]
@@ -663,9 +654,7 @@ class TestStatsCommand:
         mock_discord_channel.send.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_stats_week(
-        self, command_context, mock_postgres_client, mock_discord_channel
-    ):
+    async def test_stats_week(self, command_context, mock_postgres_client, mock_discord_channel):
         """Test stats week displays statistics."""
         cmd = StatsCommand()
         command_context.args = ["week"]
@@ -714,7 +703,7 @@ class TestWhitelistCommand:
             username="testuser",
             discriminator="1234",
             display_name="Test User",
-            joined_at=datetime.now(timezone.utc),
+            joined_at=datetime.now(UTC),
         )
         mock_postgres_client.get_whitelisted_users = AsyncMock(return_value=[mock_user])
 
@@ -743,7 +732,7 @@ class TestWhitelistCommand:
             username="targetuser",
             discriminator="5678",
             display_name="Target User",
-            joined_at=datetime.now(timezone.utc),
+            joined_at=datetime.now(UTC),
             is_whitelisted=False,
         )
         mock_postgres_client.get_user = AsyncMock(return_value=mock_user)
@@ -783,7 +772,7 @@ class TestWhitelistCommand:
             username="targetuser",
             discriminator="5678",
             display_name="Target User",
-            joined_at=datetime.now(timezone.utc),
+            joined_at=datetime.now(UTC),
             is_whitelisted=True,
         )
         mock_postgres_client.get_user = AsyncMock(return_value=mock_user)
@@ -823,7 +812,7 @@ class TestUserInfoCommand:
             username="testuser",
             discriminator="1234",
             display_name="Test User",
-            joined_at=datetime.now(timezone.utc),
+            joined_at=datetime.now(UTC),
             total_messages=150,
             toxicity_avg=0.25,
             warnings=2,
@@ -870,9 +859,7 @@ class TestPardonCommand:
     """Test suite for PardonCommand."""
 
     @pytest.mark.asyncio
-    async def test_pardon_user(
-        self, command_context, mock_postgres_client, mock_discord_channel
-    ):
+    async def test_pardon_user(self, command_context, mock_postgres_client, mock_discord_channel):
         """Test pardon clears user infractions."""
         cmd = PardonCommand()
         command_context.args = ["reason for pardon"]
@@ -889,7 +876,7 @@ class TestPardonCommand:
             username="testuser",
             discriminator="1234",
             display_name="Test User",
-            joined_at=datetime.now(timezone.utc),
+            joined_at=datetime.now(UTC),
             warnings=2,
             timeouts=1,
             kicks=0,
@@ -924,7 +911,7 @@ class TestPardonCommand:
             username="testuser",
             discriminator="1234",
             display_name="Test User",
-            joined_at=datetime.now(timezone.utc),
+            joined_at=datetime.now(UTC),
             warnings=0,
             timeouts=0,
             kicks=0,
@@ -965,9 +952,7 @@ class TestUnbanCommand:
         mock_postgres_client.create_moderation_action.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_unban_not_found(
-        self, command_context, mock_discord_channel, mock_discord_guild
-    ):
+    async def test_unban_not_found(self, command_context, mock_discord_channel, mock_discord_guild):
         """Test unban handles user not banned."""
         cmd = UnbanCommand()
         command_context.args = ["123456"]
@@ -981,9 +966,7 @@ class TestUnbanCommand:
         assert "not banned" in call_args.lower()
 
     @pytest.mark.asyncio
-    async def test_unban_forbidden(
-        self, command_context, mock_discord_channel, mock_discord_guild
-    ):
+    async def test_unban_forbidden(self, command_context, mock_discord_channel, mock_discord_guild):
         """Test unban handles permission error."""
         cmd = UnbanCommand()
         command_context.args = ["123456"]
@@ -1007,9 +990,7 @@ class TestHelpCommand:
     """Test suite for HelpCommand."""
 
     @pytest.mark.asyncio
-    async def test_help_shows_all_commands(
-        self, command_context, mock_discord_channel
-    ):
+    async def test_help_shows_all_commands(self, command_context, mock_discord_channel):
         """Test help shows all available commands."""
         cmd = HelpCommand()
 
@@ -1018,9 +999,7 @@ class TestHelpCommand:
         mock_discord_channel.send.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_help_shows_specific_command(
-        self, command_context, mock_discord_channel
-    ):
+    async def test_help_shows_specific_command(self, command_context, mock_discord_channel):
         """Test help shows details for specific command."""
         cmd = HelpCommand()
         command_context.args = ["threshold"]
@@ -1109,15 +1088,11 @@ class TestCommandHandler:
         # Should have sent error message
         assert mock_discord_message.channel.send.called
 
-    def test_get_available_commands_for_owner(
-        self, admin_settings, mock_postgres_client
-    ):
+    def test_get_available_commands_for_owner(self, admin_settings, mock_postgres_client):
         """Test get_available_commands returns all for owner."""
         handler = CommandHandler(admin_settings, mock_postgres_client, MagicMock())
 
-        commands = handler.get_available_commands(
-            user_is_owner=True, user_is_admin=True
-        )
+        commands = handler.get_available_commands(user_is_owner=True, user_is_admin=True)
 
         # Should include admin commands
         assert "threshold" in commands

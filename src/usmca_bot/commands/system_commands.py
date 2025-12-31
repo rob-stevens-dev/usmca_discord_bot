@@ -4,7 +4,7 @@ This module provides commands for system control including dry run mode,
 status checks, statistics, and help.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import discord
 
@@ -53,16 +53,16 @@ class ModeCommand(BaseCommand):
             embed.add_field(
                 name="Dry Run Mode",
                 value="✅ Actions are logged but not executed\n"
-                      "✅ Safe for testing\n"
-                      "✅ No users will be affected",
+                "✅ Safe for testing\n"
+                "✅ No users will be affected",
                 inline=False,
             )
         else:
             embed.add_field(
                 name="Live Mode",
                 value="⚡ Actions are executed immediately\n"
-                      "⚠️ Users will be warned/timed out/kicked/banned\n"
-                      "⚠️ Use with caution",
+                "⚠️ Users will be warned/timed out/kicked/banned\n"
+                "⚠️ Use with caution",
                 inline=False,
             )
 
@@ -185,7 +185,7 @@ class StatusCommand(BaseCommand):
             channels = f"Blocklist: {len(ctx.settings.blocked_channel_ids)} channels"
         else:
             channels = "Monitoring all channels"
-        
+
         embed.add_field(
             name="📢 Channel Filtering",
             value=channels,
@@ -232,10 +232,12 @@ class StatsCommand(BaseCommand):
         period = ctx.args[0].lower() if ctx.args else "today"
 
         if period not in ["today", "week", "month", "all"]:
-            raise InvalidArgumentError(f"Invalid period '{period}'. Use: today, week, month, or all")
+            raise InvalidArgumentError(
+                f"Invalid period '{period}'. Use: today, week, month, or all"
+            )
 
         # Calculate time range
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         if period == "today":
             since = now.replace(hour=0, minute=0, second=0, microsecond=0)
             title = "📊 Today's Statistics"
@@ -295,7 +297,7 @@ class StatsCommand(BaseCommand):
         )
 
         # Brigade events
-        if stats.get('brigade_events', 0) > 0:
+        if stats.get("brigade_events", 0) > 0:
             embed.add_field(
                 name="🚨 Brigade Events Detected",
                 value=f"`{stats.get('brigade_events', 0):,}`",
@@ -303,7 +305,6 @@ class StatsCommand(BaseCommand):
             )
 
         if since:
-            since_ts = int(since.timestamp())
             embed.set_footer(text=f"Since: {since.strftime('%Y-%m-%d %H:%M UTC')}")
 
         await ctx.channel.send(embed=embed)
@@ -360,9 +361,15 @@ class HelpCommand(BaseCommand):
             )
         else:
             # Group commands by category
-            config_cmds = [c for c in available_commands if c in ["threshold", "timeout", "brigade"]]
-            user_cmds = [c for c in available_commands if c in ["whitelist", "user", "pardon", "unban"]]
-            system_cmds = [c for c in available_commands if c in ["mode", "status", "stats", "help"]]
+            config_cmds = [
+                c for c in available_commands if c in ["threshold", "timeout", "brigade"]
+            ]
+            user_cmds = [
+                c for c in available_commands if c in ["whitelist", "user", "pardon", "unban"]
+            ]
+            system_cmds = [
+                c for c in available_commands if c in ["mode", "status", "stats", "help"]
+            ]
             admin_cmds = [c for c in available_commands if c in ["admin"]]
 
             if config_cmds:
