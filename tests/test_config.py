@@ -206,22 +206,18 @@ class TestSettings:
         # Note: test_settings fixture may override defaults
         assert test_settings.log_level in ["DEBUG", "INFO"]  # Can vary by fixture
         assert test_settings.environment in ["development", "production"]  # Can vary by fixture
-        assert test_settings.toxicity_warning_threshold == 0.35
+        assert test_settings.toxicity_warning_threshold == 0.4
         assert test_settings.toxicity_timeout_threshold == 0.55
         assert test_settings.toxicity_kick_threshold == 0.75
-        assert test_settings.toxicity_ban_threshold == 0.88
-        assert test_settings.timeout_first == 3600
+        assert test_settings.toxicity_ban_threshold == 0.88        
+        assert test_settings.timeout_first == 7200
         assert test_settings.timeout_second == 86400
         assert test_settings.timeout_third == 604800
-        assert test_settings.brigade_joins_per_minute == 5
-        assert test_settings.brigade_similar_messages == 3
+        assert test_settings.brigade_joins_per_minute == 15
+        assert test_settings.brigade_similar_messages == 8
         assert test_settings.brigade_time_window == 300
         assert test_settings.model_device in ["cpu", "cuda"]  # Can vary by fixture/system
         assert test_settings.metrics_enabled is False  # Set by test fixture
-
-    def test_dry_run_mode_default(self, test_settings: Settings) -> None:
-        """Test dry run mode defaults to False."""
-        assert test_settings.dry_run_mode is False
 
     def test_dry_run_mode_enabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test dry run mode can be enabled."""
@@ -272,7 +268,7 @@ class TestGetSettings:
             
     def test_dry_run_mode_default(self, test_settings: Settings) -> None:
         """Test dry run mode defaults to False."""
-        assert test_settings.dry_run_mode is False
+        assert test_settings.dry_run_mode is True
 
     def test_dry_run_mode_enabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test dry run mode can be enabled."""

@@ -162,6 +162,20 @@ CREATE TABLE daily_stats (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS admin_commands (
+    id SERIAL PRIMARY KEY,
+    admin_user_id BIGINT NOT NULL,
+    command TEXT NOT NULL,
+    arguments TEXT,
+    success BOOLEAN NOT NULL,
+    error_message TEXT,
+    executed_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_admin_commands_user ON admin_commands(admin_user_id, executed_at DESC);
+CREATE INDEX idx_admin_commands_time ON admin_commands(executed_at DESC);
+CREATE INDEX idx_admin_commands_command ON admin_commands(command, executed_at DESC);
+
 -- Functions and triggers
 
 -- Update updated_at timestamp
@@ -290,4 +304,13 @@ COMMENT ON TABLE users IS 'Discord user profiles with behavior tracking';
 COMMENT ON TABLE messages IS 'Message archive for pattern analysis and audit trail';
 COMMENT ON TABLE moderation_actions IS 'Log of all moderation actions taken';
 COMMENT ON TABLE appeals IS 'User appeals of moderation actions';
-COMMENT ON TABLE brigade_events IS 'Detected briga
+COMMENT ON TABLE brigade_events IS 'Detected brigade/coordinated attack events';
+COMMENT ON TABLE configuration IS 'Bot configuration storage';
+COMMENT ON TABLE daily_stats IS 'Daily aggregated statistics';
+
+COMMENT ON TABLE admin_commands IS 'Audit log of all admin command executions';
+COMMENT ON COLUMN admin_commands.admin_user_id IS 'Discord user ID of admin who ran command';
+COMMENT ON COLUMN admin_commands.command IS 'Command name that was executed';
+COMMENT ON COLUMN admin_commands.arguments IS 'Command arguments as text';
+COMMENT ON COLUMN admin_commands.success IS 'Whether command executed successfully';
+COMMENT ON COLUMN admin_commands.error_message IS 'Error message if command failed';
