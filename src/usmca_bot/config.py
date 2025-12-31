@@ -206,6 +206,18 @@ class Settings(BaseSettings):
         default=True,
         description="Whether to enable Prometheus metrics",
     )
+    
+    # Admin Configuration
+    bot_owner_id: int = Field(
+        default=0,
+        description="Discord user ID of the bot owner (0 = no owner set)",
+        ge=0,
+    )
+    bot_admin_ids_str: str = Field(
+        default="",
+        description="Comma-separated Discord user IDs of bot admins",
+        alias="BOT_ADMIN_IDS",
+    )
 
     @property
     def allowed_channel_ids(self) -> list[int]:
@@ -232,6 +244,20 @@ class Settings(BaseSettings):
             return []
         try:
             return [int(x.strip()) for x in self.blocked_channel_ids_str.split(",") if x.strip()]
+        except ValueError:
+            return []
+
+    @property
+    def bot_admin_ids(self) -> list[int]:
+        """Parse bot admin IDs from string.
+        
+        Returns:
+            List of admin user IDs.
+        """
+        if not self.bot_admin_ids_str.strip():
+            return []
+        try:
+            return [int(x.strip()) for x in self.bot_admin_ids_str.split(",") if x.strip()]
         except ValueError:
             return []
 
