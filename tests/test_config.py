@@ -219,6 +219,21 @@ class TestSettings:
         assert test_settings.model_device in ["cpu", "cuda"]  # Can vary by fixture/system
         assert test_settings.metrics_enabled is False  # Set by test fixture
 
+    def test_dry_run_mode_default(self, test_settings: Settings) -> None:
+        """Test dry run mode defaults to False."""
+        assert test_settings.dry_run_mode is False
+
+    def test_dry_run_mode_enabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test dry run mode can be enabled."""
+        monkeypatch.setenv("DISCORD_TOKEN", "x" * 59)
+        monkeypatch.setenv("DISCORD_GUILD_ID", "123456789012345678")
+        monkeypatch.setenv("POSTGRES_DSN", "postgresql://user:pass@localhost/db")
+        monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
+        monkeypatch.setenv("DRY_RUN_MODE", "true")
+
+        settings = Settings()
+        assert settings.dry_run_mode is True
+
 
 class TestGetSettings:
     """Test suite for get_settings() function."""
@@ -254,6 +269,21 @@ class TestGetSettings:
 
         # They should be different instances
         assert settings1 is not settings2
+            
+    def test_dry_run_mode_default(self, test_settings: Settings) -> None:
+        """Test dry run mode defaults to False."""
+        assert test_settings.dry_run_mode is False
+
+    def test_dry_run_mode_enabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test dry run mode can be enabled."""
+        monkeypatch.setenv("DISCORD_TOKEN", "x" * 59)
+        monkeypatch.setenv("DISCORD_GUILD_ID", "123456789012345678")
+        monkeypatch.setenv("POSTGRES_DSN", "postgresql://user:pass@localhost/db")
+        monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
+        monkeypatch.setenv("DRY_RUN_MODE", "true")
+
+        settings = Settings()
+        assert settings.dry_run_mode is True
 
 
 class TestThresholdValidation:
